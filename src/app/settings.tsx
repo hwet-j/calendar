@@ -1,9 +1,12 @@
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
-import React, { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { C } from '../components/theme';
+import React, { useMemo, useState } from 'react';
+import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { R, Theme, useTheme } from '../components/theme';
+import { Button, Row, Section } from '../components/ui';
 import * as G from '../lib/google';
 import { pickAndImport, shareEvents } from '../lib/share';
 import { uid, useStore } from '../lib/store';
@@ -18,6 +21,9 @@ const CLIENT_ID = Platform.select({
 });
 
 export default function Settings() {
+  const t = useTheme();
+  const st = useMemo(() => styles(t), [t]);
+  const insets = useSafeAreaInsets();
   const { state, shown, setGoogle, replaceEvents, importEvents } = useStore();
   const [busy, setBusy] = useState(false);
   const discovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
@@ -78,43 +84,48 @@ export default function Settings() {
     if (list.length) { importEvents(list); Alert.alert(`${list.length}개 일정을 가져왔어요`); }
   };
 
+  const connected = state.google.connected;
   return (
-    <ScrollView style={{ backgroundColor: C.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Card title="구글 캘린더 연동">
-        <Text style={s.sub}>{state.google.connected ? `연결됨${state.google.email ? ` · ${state.google.email}` : ''}` : '연결되지 않음'}</Text>
-        {state.google.lastSync && <Text style={s.sub}>마지막 동기화: {new Date(state.google.lastSync).toLocaleString('ko-KR')}</Text>}
-        {state.google.connected ? (
-          <View style={{ gap: 8 }}>
-            <Btn t={busy ? '동기화 중…' : '지금 동기화 (양방향)'} onPress={sync} disabled={busy} />
-            <Btn t="연결 해제" onPress={disconnect} ghost />
-          </View>
-        ) : <Btn t="구글 계정으로 연결" onPress={connect} disabled={!request} />}
-      </Card>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 18, paddingBottom: insets.bottom + 24 }}>
+      <View style={st.hero}>
+        <View style={st.gIcon}><Ionicons name="logo-google" size={22} color={t.primary} /></View>
+        <View style={{ flex: 1 }}>
+          <Text style={st.heroT}>구글 캘린더</Text>
+          <Text style={st.heroS}>
+            {connected ? `연결됨${state.google.email ? ` · ${state.google.email}` : ''}` : '연결하면 구글 일정과 양방향으로 동기화돼요'}
+          </Text>
+          {state.google.lastSync && <Text style={st.heroS}>마지막 동기화 {new Date(state.google.lastSync).toLocaleString('ko-KR')}</Text>}
+        </View>
+      </View>
+      {connected ? (
+        <View style={{ gap: 8 }}>
+          <Button text={busy ? '동기화 중…' : '지금 동기화'} icon="sync-outline" onPress={sync} disabled={busy} />
+          <Button text="연결 해제" kind="danger" onPress={disconnect} />
+        </View>
+      ) : <Button text="구글 계정으로 연결" icon="logo-google" onPress={connect} disabled={!request} />}
 
-      <Card title="일정 공유">
-        <Text style={s.sub}>• 일정 상세에서 이메일을 추가하면 구글 캘린더 초대로 공유돼요.{'\n'}• .ics 파일로 내보내 메신저/메일로 보내면 받는 사람이 자기 캘린더로 열 수 있어요.</Text>
-        <Btn t={`현재 보기의 일정 ${shown.length}개 내보내기 (.ics)`} onPress={() => shareEvents(shown)} />
-        <Btn t=".ics 파일 가져오기" onPress={doImport} ghost />
-      </Card>
+      <Section title="일정 공유">
+        <Row icon="share-outline" label={`현재 보기 내보내기 (${shown.length}개)`} onPress={() => shareEvents(shown)} right={<Ionicons name="chevron-forward" size={18} color={t.faint} />} />
+        <Row icon="download-outline" label=".ics 파일 가져오기" onPress={doImport} last right={<Ionicons name="chevron-forward" size={18} color={t.faint} />} />
+      </Section>
+      <Text style={st.note}>일정 상세에서 친구 이메일을 추가하면, 구글 연결 시 구글 캘린더가 초대를 보내 공유돼요. 내보낸 .ics 파일은 메신저·메일로 보내면 받는 사람이 자기 캘린더로 열 수 있어요.</Text>
 
-      <Card title="알림 · 홈 위젯">
-        <Text style={s.sub}>• 알림: 일정별로 설정한 시간에 기기 알림이 울려요 (반복 일정 포함).{'\n'}• 홈 위젯(안드로이드): 홈 화면 길게 누르기 → 위젯 → "오늘의 일정". 홈에서 고른 프로필(또는 전체)을 그대로 보여줘요.{Platform.OS === 'ios' ? '\n• iOS 위젯은 아직 지원되지 않아요.' : ''}</Text>
-      </Card>
-      <Text style={[s.sub, { textAlign: 'center' }]}>v{Constants.expoConfig?.version}</Text>
+      <Section title="알림 · 위젯">
+        <Row icon="notifications-outline" label="일정 알림" right={<Text style={st.val}>일정별 설정</Text>} />
+        <Row icon="apps-outline" label="홈 위젯" last right={<Text style={st.val}>{Platform.OS === 'android' ? '길게 눌러 추가' : 'iOS 준비 중'}</Text>} />
+      </Section>
+      <Text style={st.note}>안드로이드: 홈 화면을 길게 누르고 위젯에서 "오늘의 일정"을 추가하세요. 홈에서 선택한 프로필(또는 전체)이 그대로 표시돼요.</Text>
+
+      <Text style={[st.note, { textAlign: 'center' }]}>v{Constants.expoConfig?.version}</Text>
     </ScrollView>
   );
 }
 
-const Card = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <View style={s.card}><Text style={s.h}>{title}</Text>{children}</View>
-);
-const Btn = ({ t, onPress, ghost, disabled }: { t: string; onPress: () => void; ghost?: boolean; disabled?: boolean }) => (
-  <Pressable onPress={onPress} disabled={disabled} style={[s.btn, ghost && { backgroundColor: 'transparent', borderWidth: 1, borderColor: C.primary }, disabled && { opacity: 0.5 }]}>
-    <Text style={{ color: ghost ? C.primary : '#fff', fontWeight: '700' }}>{t}</Text>
-  </Pressable>
-);
-const s = StyleSheet.create({
-  card: { backgroundColor: C.card, borderRadius: 14, padding: 16, gap: 10 },
-  h: { fontSize: 16, fontWeight: '700', color: C.text }, sub: { fontSize: 13, color: C.sub, lineHeight: 19 },
-  btn: { backgroundColor: C.primary, padding: 12, borderRadius: 10, alignItems: 'center' },
+const styles = (t: Theme) => StyleSheet.create({
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: t.card, borderRadius: R.md, padding: 16, boxShadow: t.shadow },
+  gIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: t.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  heroT: { fontSize: 17, fontWeight: '800', color: t.text },
+  heroS: { fontSize: 13, color: t.sub, marginTop: 2 },
+  note: { fontSize: 12, color: t.sub, lineHeight: 18, marginHorizontal: 6, marginTop: -8 },
+  val: { fontSize: 14, color: t.sub },
 });

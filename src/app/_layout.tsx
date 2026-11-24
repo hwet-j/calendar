@@ -1,9 +1,11 @@
-import { Stack, router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect } from 'react';
-import { StoreProvider, useStore } from '../lib/store';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useTheme } from '../components/theme';
 import { rescheduleAll } from '../lib/notifications';
+import { StoreProvider, useStore } from '../lib/store';
 import { refreshWidgets } from '../widget/refresh';
 
 function Sync() {
@@ -27,16 +29,27 @@ function Sync() {
 }
 
 export default function Root() {
+  const t = useTheme();
   return (
-    <StoreProvider>
-      <Sync />
-      <StatusBar style="dark" />
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="event/[id]" options={{ title: '일정', presentation: 'modal' }} />
-        <Stack.Screen name="profiles" options={{ title: '프로필 관리' }} />
-        <Stack.Screen name="settings" options={{ title: '설정 · 연동 · 공유' }} />
-      </Stack>
-    </StoreProvider>
+    <SafeAreaProvider>
+      <StoreProvider>
+        <Sync />
+        <StatusBar style={t.dark ? 'light' : 'dark'} />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: t.bg },
+            headerTintColor: t.text,
+            headerShadowVisible: false,
+            headerTitleStyle: { fontWeight: '700' },
+            contentStyle: { backgroundColor: t.bg },
+          }}
+        >
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="event/[id]" options={{ title: '일정', presentation: 'modal' }} />
+          <Stack.Screen name="profiles" options={{ title: '프로필' }} />
+          <Stack.Screen name="settings" options={{ title: '설정' }} />
+        </Stack>
+      </StoreProvider>
+    </SafeAreaProvider>
   );
 }

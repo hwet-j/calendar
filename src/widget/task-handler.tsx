@@ -18,9 +18,15 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
   switch (props.widgetAction) {
     case 'WIDGET_ADDED':
     case 'WIDGET_UPDATE':
-    case 'WIDGET_RESIZED':
-      props.renderWidget(<AgendaWidget state={await loadState()} />);
+    case 'WIDGET_RESIZED': {
+      const state = await loadState();
+      const heightDp = props.widgetInfo.height;
+      props.renderWidget({
+        light: <AgendaWidget state={state} heightDp={heightDp} mode="light" />,
+        dark: <AgendaWidget state={state} heightDp={heightDp} mode="dark" />,
+      });
       break;
+    }
     default:
       break;
   }

@@ -1,47 +1,89 @@
 import React from 'react';
 import { FlexWidget, TextWidget } from 'react-native-android-widget';
-import { expand, fmtTime, startOfDay, addDays } from '../lib/dates';
+import { addDays, expand, fmtTime, sameDay, startOfDay } from '../lib/dates';
 import { visibleEvents } from '../lib/filter';
-import type { AppState } from '../lib/types';
+import type { AppState, Occurrence } from '../lib/types';
 
-/** 홈 위젯: 선택된 프로필(또는 모든 프로필)의 오늘~내일 일정 */
-export function AgendaWidget({ state, now = new Date() }: { state: AppState; now?: Date }) {
+type Hex = `#${string}`;
+type Pal = Record<'bg' | 'item' | 'text' | 'sub' | 'primary' | 'soft', Hex>;
+const PALETTE: Record<'light' | 'dark', Pal> = {
+  light: { bg: '#FFFFFF', item: '#F4F5F9', text: '#14161F', sub: '#6B7080', primary: '#4F6BFF', soft: '#EAEEFF' },
+  dark: { bg: '#1A1C25', item: '#262936', text: '#F2F3F7', sub: '#9A9FB1', primary: '#7C92FF', soft: '#2B3158' },
+};
+
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+const ROW_H = 46; // 일정 카드 1개 높이(dp, 여백 포함)
+const HEADER_H = 74;
+
+/** 위젯 높이(dp)에 맞춰 보여줄 일정 개수 결정 (1~6) */
+export const visibleRows = (heightDp?: number) =>
+  Math.max(1, Math.min(6, Math.floor(((heightDp ?? 150) - HEADER_H - 12) / ROW_H)));
+
+interface Props { state: AppState; now?: Date; heightDp?: number; mode?: 'light' | 'dark' }
+
+export function AgendaWidget({ state, now = new Date(), heightDp, mode = 'light' }: Props) {
+  const c = PALETTE[mode];
   const today = startOfDay(now);
-  const occ = expand(visibleEvents(state), today, addDays(today, 2))
-    .filter((o) => o.end >= now)
-    .slice(0, 5);
-  const scope = state.activeProfileId
-    ? state.profiles.find((p) => p.id === state.activeProfileId)?.name ?? ''
-    : '모든 프로필';
+  const all = expand(visibleEvents(state), today, addDays(today, 3)).filter((o) => o.end >= now);
+  const max = visibleRows(heightDp);
+  const shown = all.slice(0, max);
+  const more = all.length - shown.length;
+  const scope = state.activeProfileId ? state.profiles.find((p) => p.id === state.activeProfileId)?.name ?? '' : '모든 프로필';
 
   return (
     <FlexWidget
       clickAction="OPEN_APP"
-      style={{ height: 'match_parent', width: 'match_parent', backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, flexDirection: 'column' }}
+      style={{ height: 'match_parent', width: 'match_parent', backgroundColor: c.bg, borderRadius: 24, padding: 14, flexDirection: 'column' }}
     >
-      <TextWidget
-        text={`${now.getMonth() + 1}월 ${now.getDate()}일 · ${scope}`}
-        style={{ fontSize: 14, fontWeight: 'bold', color: '#1F2937', marginBottom: 6 }}
-      />
-      {occ.length === 0 ? (
-        <TextWidget text="예정된 일정이 없어요" style={{ fontSize: 13, color: '#6B7280' }} />
+      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+        <TextWidget text={String(now.getDate())} style={{ fontSize: 34, fontWeight: 'bold', color: c.text, marginRight: 10 }} />
+        <FlexWidget style={{ flex: 1, flexDirection: 'column', marginRight: 8 }}>
+          <TextWidget text={`${DOW[now.getDay()]}요일`} style={{ fontSize: 14, fontWeight: 'bold', color: c.text }} />
+          <TextWidget text={`${now.getMonth() + 1}월 · ${scope}`} style={{ fontSize: 12, color: c.sub }} maxLines={1} truncate="END" />
+        </FlexWidget>
+        <FlexWidget
+          clickAction="OPEN_URI"
+          clickActionData={{ uri: 'calendarapp://event/new' }}
+          accessibilityLabel="일정 추가"
+          style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <TextWidget text="+" style={{ fontSize: 22, fontWeight: 'bold', color: '#FFFFFF' }} />
+        </FlexWidget>
+      </FlexWidget>
+
+      {shown.length === 0 ? (
+        <FlexWidget style={{ width: 'match_parent', flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <TextWidget text="예정된 일정이 없어요" style={{ fontSize: 14, fontWeight: 'bold', color: c.text }} />
+          <TextWidget text="여유로운 하루 보내세요" style={{ fontSize: 12, color: c.sub, marginTop: 2 }} />
+        </FlexWidget>
       ) : (
-        occ.map((o, i) => {
-          const color = (state.profiles.find((p) => p.id === o.event.profileId)?.color ?? '#4F7CFF') as `#${string}`;
-          const isTomorrow = o.start >= addDays(today, 1);
-          return (
-            <FlexWidget key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-              <FlexWidget style={{ width: 4, height: 16, backgroundColor: color, borderRadius: 2, marginRight: 8 }} />
-              <TextWidget
-                text={`${isTomorrow ? '내일 ' : ''}${o.event.allDay ? '종일' : fmtTime(o.start)}  ${o.event.title}`}
-                style={{ fontSize: 13, color: '#111827' }}
-                maxLines={1}
-                truncate="END"
-              />
-            </FlexWidget>
-          );
-        })
+        shown.map((o, i) => <Item key={`${o.event.id}-${i}`} o={o} now={now} state={state} c={c} />)
       )}
+
+      {more > 0 && (
+        <TextWidget text={`+ ${more}개 더 보기`} style={{ fontSize: 12, fontWeight: 'bold', color: c.primary, marginTop: 2, marginLeft: 4 }} />
+      )}
+    </FlexWidget>
+  );
+}
+
+function Item({ o, now, state, c }: { o: Occurrence; now: Date; state: AppState; c: Pal }) {
+  const p = state.profiles.find((x) => x.id === o.event.profileId);
+  const color = (p?.color ?? c.primary) as Hex;
+  const day = sameDay(o.start, now) ? '' : sameDay(o.start, addDays(now, 1)) ? '내일 ' : `${o.start.getMonth() + 1}/${o.start.getDate()} `;
+  const when = o.event.allDay ? `${day}종일` : `${day}${fmtTime(o.start)}–${fmtTime(o.end)}`;
+  return (
+    <FlexWidget
+      clickAction="OPEN_URI"
+      clickActionData={{ uri: `calendarapp://event/${o.event.id}` }}
+      accessibilityLabel={o.event.title}
+      style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', backgroundColor: c.item, borderRadius: 12, paddingVertical: 7, paddingHorizontal: 10, marginBottom: 6 }}
+    >
+      <FlexWidget style={{ width: 4, height: 28, borderRadius: 2, backgroundColor: color, marginRight: 10 }} />
+      <FlexWidget style={{ flex: 1, flexDirection: 'column' }}>
+        <TextWidget text={o.event.title} style={{ fontSize: 14, fontWeight: 'bold', color: c.text }} maxLines={1} truncate="END" />
+        <TextWidget text={`${when}${p ? ` · ${p.name}` : ''}`} style={{ fontSize: 11, color: c.sub }} maxLines={1} truncate="END" />
+      </FlexWidget>
     </FlexWidget>
   );
 }

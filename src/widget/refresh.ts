@@ -10,7 +10,10 @@ export async function refreshWidgets(state: AppState) {
     const { AgendaWidget } = await import('./AgendaWidget');
     await requestWidgetUpdate({
       widgetName: 'AgendaWidget',
-      renderWidget: () => React.createElement(AgendaWidget, { state }),
+      renderWidget: (info) => ({
+        light: React.createElement(AgendaWidget, { state, heightDp: info.height, mode: 'light' }),
+        dark: React.createElement(AgendaWidget, { state, heightDp: info.height, mode: 'dark' }),
+      }),
     });
   } catch {
     /* Expo Go 등 네이티브 모듈이 없는 환경에서는 무시 */

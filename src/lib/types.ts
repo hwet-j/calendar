@@ -29,6 +29,8 @@ export interface CalEvent {
   /** 설정되면 음력 기준 일정. repeat='yearly'면 매년 같은 음력 날짜에 반복 (예: 음력 생일) */
   lunar?: LunarDate;
   googleId?: string;
+  /** 구글에 아직 반영되지 못한 로컬 변경이 있음 (다음 동기화 때 먼저 올림, 구글 버전으로 덮어쓰지 않음) */
+  pendingSync?: boolean;
   updatedAt: string;
 }
 

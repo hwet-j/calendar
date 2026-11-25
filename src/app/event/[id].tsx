@@ -96,10 +96,16 @@ function EventForm() {
     setSaving(true);
     const attendees = mails.split(/[,\s]+/).filter((m) => /.+@.+\..+/.test(m));
     let out: CalEvent = { ...ev, title: ev.title.trim(), attendees, updatedAt: new Date().toISOString() };
-    const tok = state.google.connected ? await G.loadToken() : null;
-    if (tok && tok.expiresAt > Date.now()) {
-      try { out = { ...out, googleId: await G.pushEvent(tok.accessToken, out) }; }
-      catch (e) { Alert.alert('구글 동기화 실패', '기기에는 저장됐어요. 설정에서 다시 동기화해 보세요.\n' + String(e)); }
+    if (state.google.connected) {
+      // 구글에 못 올리면(토큰 만료·네트워크·API 오류) 기기에는 저장하고 pendingSync로 표시 → 다음 동기화 때 다시 올림
+      out = { ...out, pendingSync: true };
+      const token = await G.freshAccessToken();
+      if (token) {
+        try { out = { ...out, googleId: await G.pushEvent(token, out), pendingSync: false }; }
+        catch (e) { Alert.alert('구글 동기화 실패', '기기에는 저장됐어요. 설정에서 "지금 동기화"를 누르면 다시 올려요.\n' + String(e)); }
+      } else {
+        Alert.alert('구글 연결이 만료됐어요', '기기에는 저장됐어요. 설정에서 구글을 다시 연결한 뒤 동기화하면 반영돼요.');
+      }
     }
     saveEvent(out);
     router.back();
@@ -108,8 +114,8 @@ function EventForm() {
   const remove = () => Alert.alert('일정 삭제', '이 일정을 삭제할까요?', [
     { text: '취소', style: 'cancel' },
     { text: '삭제', style: 'destructive', onPress: async () => {
-      const tok = existing?.googleId && state.google.connected ? await G.loadToken() : null;
-      if (tok && existing?.googleId) await G.removeEvent(tok.accessToken, existing.googleId).catch(() => {});
+      const token = existing?.googleId && state.google.connected ? await G.freshAccessToken() : null;
+      if (token && existing?.googleId) await G.removeEvent(token, existing.googleId).catch(() => {});
       deleteEvent(ev.id); router.back();
     } },
   ]);

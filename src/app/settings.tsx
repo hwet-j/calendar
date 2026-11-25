@@ -49,32 +49,24 @@ export default function Settings() {
     setGoogle({ connected: true, email: info.email });
   };
 
-  const freshToken = async (): Promise<string | null> => {
-    const t = await G.loadToken();
-    if (!t) return null;
-    if (t.expiresAt > Date.now() + 60000) return t.accessToken;
-    if (!t.refreshToken || !discovery || !CLIENT_ID) return null;
-    const r = await AuthSession.refreshAsync({ clientId: CLIENT_ID, refreshToken: t.refreshToken }, discovery);
-    await G.saveToken({ accessToken: r.accessToken, refreshToken: r.refreshToken ?? t.refreshToken, expiresAt: Date.now() + (r.expiresIn ?? 3600) * 1000 });
-    return r.accessToken;
-  };
-
   const sync = async () => {
     setBusy(true);
     try {
-      const token = await freshToken();
+      const token = await G.freshAccessToken();
       if (!token) { setGoogle({ connected: false }); return Alert.alert('다시 로그인해 주세요'); }
-      // 1) 아직 구글에 없는 로컬 일정을 올리고  2) 구글 일정을 가져와 병합
+      // 1) 구글에 없거나(신규) 구글에 반영 못 한(수정) 로컬 일정을 먼저 올리고  2) 구글 일정을 가져와 병합
       const local = [...state.events];
+      let failed = 0;
       for (let i = 0; i < local.length; i++) {
-        if (!local[i].googleId) local[i] = { ...local[i], googleId: await G.pushEvent(token, local[i]) };
+        if (local[i].googleId && !local[i].pendingSync) continue;
+        try { local[i] = { ...local[i], googleId: await G.pushEvent(token, local[i]), pendingSync: false }; }
+        catch { failed++; local[i] = { ...local[i], pendingSync: true }; }
       }
       const profileId = state.activeProfileId ?? state.profiles[0].id;
       const pulled = await G.pullEvents(token, profileId, uid, local);
-      const pulledG = new Set(pulled.map((e) => e.googleId));
-      replaceEvents([...local.filter((e) => !e.googleId || !pulledG.has(e.googleId)), ...pulled]);
+      replaceEvents(G.mergePulled(local, pulled));
       setGoogle({ ...state.google, connected: true, lastSync: new Date().toISOString() });
-      Alert.alert('동기화 완료', `구글 일정 ${pulled.length}개를 반영했어요.`);
+      Alert.alert(failed ? '일부만 동기화됐어요' : '동기화 완료', failed ? `구글에 올리지 못한 일정이 ${failed}개 있어요. 기기에는 그대로 남아 있고 다음 동기화 때 다시 시도해요.` : `구글 일정 ${pulled.length}개를 반영했어요.`);
     } catch (e) { Alert.alert('동기화 실패', String(e)); } finally { setBusy(false); }
   };
 

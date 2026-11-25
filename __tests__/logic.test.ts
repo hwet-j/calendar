@@ -146,3 +146,66 @@ test('OAuth 리디렉션 주소만 라우터에서 제외, 일반 딥링크는 �
   for (const u of ['calendarapp://event/new', 'calendarapp://event/abc123', '/event/3', '/settings', 'calendarapp:///profiles', 'calendarapp://event/oauthredirect-note'])
     expect(isOAuthRedirect(u)).toBe(false);
 });
+
+import { mergePulled } from '../src/lib/google';
+
+// 구글 PATCH 의미론 흉내: 객체는 필드 단위 병합, null은 필드 삭제, 배열/원시값은 교체
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyPatch(target: any, patch: any): any {
+  const out = { ...target };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    if (v === null) delete out[k];
+    else if (typeof v === 'object' && !Array.isArray(v) && typeof out[k] === 'object' && out[k] && !Array.isArray(out[k])) out[k] = applyPatch(out[k], v);
+    else out[k] = v;
+  }
+  return out;
+}
+
+test('시간 일정 → 종일 수정: start/end에 date와 dateTime이 함께 남지 않음 ("Invalid start time" 회귀)', () => {
+  const timed = ev({ start: new Date(2026, 10, 25, 12).toISOString(), end: new Date(2026, 10, 25, 13).toISOString() });
+  const onGoogle = JSON.parse(JSON.stringify(toGoogle(timed))); // 구글에 이미 있는 시간 일정
+  const allDay = { ...timed, allDay: true };
+
+  // 옛 방식(null 없이 date만 전송)은 병합 결과가 잘못됨 → 버그 재현
+  const oldBody = { ...toGoogle(allDay, false), start: { date: '2026-11-25' }, end: { date: '2026-11-26' } };
+  expect(Object.keys(applyPatch(onGoogle, JSON.parse(JSON.stringify(oldBody))).start).sort()).toEqual(['date', 'dateTime']);
+
+  // 새 방식
+  const merged = applyPatch(onGoogle, JSON.parse(JSON.stringify(toGoogle(allDay, true))));
+  expect(merged.start).toEqual({ date: '2026-11-25' });
+  expect(merged.end).toEqual({ date: '2026-11-26' });
+});
+
+test('종일 → 시간 일정 수정도 date가 남지 않음', () => {
+  const day = ev({ allDay: true, start: new Date(2026, 10, 25).toISOString(), end: new Date(2026, 10, 25).toISOString() });
+  const onGoogle = JSON.parse(JSON.stringify(toGoogle(day)));
+  const timed = { ...day, allDay: false, start: new Date(2026, 10, 25, 9).toISOString(), end: new Date(2026, 10, 25, 10).toISOString() };
+  const merged = applyPatch(onGoogle, JSON.parse(JSON.stringify(toGoogle(timed, true))));
+  expect(Object.keys(merged.start)).toEqual(['dateTime']);
+  expect(Object.keys(merged.end)).toEqual(['dateTime']);
+});
+
+test('수정 시 비운 장소·메모·반복·참석자는 구글에서도 지워짐, 신규 생성 본문에는 null이 없음', () => {
+  const full = ev({ location: '강남', notes: '메모', repeat: 'weekly', attendees: ['a@b.co'], reminderMinutes: 10 });
+  const onGoogle = JSON.parse(JSON.stringify(toGoogle(full)));
+  const cleared = { ...full, location: '', notes: '', repeat: 'none' as const, attendees: [], reminderMinutes: undefined };
+  const merged = applyPatch(onGoogle, JSON.parse(JSON.stringify(toGoogle(cleared, true))));
+  expect(merged.location).toBeUndefined();
+  expect(merged.description).toBeUndefined();
+  expect(merged.recurrence).toBeUndefined();
+  expect(merged.attendees).toBeUndefined();
+  expect(merged.reminders).toEqual({ useDefault: true });
+  expect(JSON.stringify(toGoogle(cleared, false))).not.toContain('null');
+});
+
+test('동기화 병합: 구글에 못 올린 로컬 수정(pendingSync)은 구글의 옛 버전으로 덮어쓰지 않음', () => {
+  const mine = ev({ id: 'L1', googleId: 'g1', title: '내가 고친 제목', pendingSync: true });
+  const synced = ev({ id: 'L2', googleId: 'g2', title: '옛 로컬' });
+  const localOnly = ev({ id: 'L3', title: '구글에 없는 일정' });
+  const pulled = [ev({ id: 'x1', googleId: 'g1', title: '구글의 옛 제목' }), ev({ id: 'x2', googleId: 'g2', title: '구글 최신' }), ev({ id: 'x4', googleId: 'g4', title: '구글에서 새로 온 일정' })];
+  const out = mergePulled([mine, synced, localOnly], pulled);
+  const byTitle = out.map((e) => e.title).sort();
+  expect(byTitle).toEqual(['구글 최신', '구글에서 새로 온 일정', '구글에 없는 일정', '내가 고친 제목'].sort());
+  expect(out.find((e) => e.googleId === 'g1')!.pendingSync).toBe(true);
+});

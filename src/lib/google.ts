@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { lunarYearlyStarts } from './dates';
 import type { CalEvent, Repeat } from './types';
@@ -42,16 +43,27 @@ function recurrenceOf(e: CalEvent): string[] | undefined {
   return RRULE[e.repeat];
 }
 
-export function toGoogle(e: CalEvent) {
+/**
+ * 앱 일정 → 구글 이벤트 본문.
+ * patch=true(수정)일 때는 비운 값/바뀐 형식을 구글에 남기지 않도록 null로 명시한다.
+ * (PATCH는 필드를 병합하므로, 시간 일정 → 종일로 바꿀 때 `dateTime: null`을 안 보내면
+ *  start에 date와 dateTime이 함께 남아 "Invalid start time" 400 오류가 난다)
+ */
+export function toGoogle(e: CalEvent, patch = false) {
   const s = new Date(e.start), en = new Date(e.end);
+  const n = patch ? null : undefined;
+  const rec = recurrenceOf(e);
   return {
-    summary: e.title, location: e.location, description: e.notes,
-    start: e.allDay ? { date: dOnly(s) } : { dateTime: s.toISOString() },
-    end: e.allDay ? { date: dOnly(new Date(en.getTime() + 86400000)) } : { dateTime: en.toISOString() },
-    recurrence: recurrenceOf(e),
-    attendees: e.attendees.length ? e.attendees.map((email) => ({ email })) : undefined,
+    summary: e.title,
+    location: e.location || n,
+    description: e.notes || n,
+    start: e.allDay ? { date: dOnly(s), dateTime: n } : { dateTime: s.toISOString(), date: n },
+    end: e.allDay ? { date: dOnly(new Date(en.getTime() + 86400000)), dateTime: n } : { dateTime: en.toISOString(), date: n },
+    recurrence: rec ?? n,
+    attendees: e.attendees.length ? e.attendees.map((email) => ({ email })) : n,
     reminders: e.reminderMinutes !== undefined
-      ? { useDefault: false, overrides: [{ method: 'popup', minutes: e.reminderMinutes }] } : undefined,
+      ? { useDefault: false, overrides: [{ method: 'popup', minutes: e.reminderMinutes }] }
+      : (patch ? { useDefault: true, overrides: null } : undefined),
   };
 }
 
@@ -113,7 +125,7 @@ export async function pullEvents(token: string, profileId: string, newId: () => 
 export async function pushEvent(token: string, e: CalEvent): Promise<string> {
   const qs = '?sendUpdates=all';
   if (e.googleId) {
-    const r = await call(token, `${BASE}/${e.googleId}${qs}`, { method: 'PATCH', body: JSON.stringify(toGoogle(e)) });
+    const r = await call(token, `${BASE}/${e.googleId}${qs}`, { method: 'PATCH', body: JSON.stringify(toGoogle(e, true)) });
     return r.id;
   }
   const r = await call(token, `${BASE}${qs}`, { method: 'POST', body: JSON.stringify(toGoogle(e)) });
@@ -122,3 +134,42 @@ export async function pushEvent(token: string, e: CalEvent): Promise<string> {
 
 export const removeEvent = (token: string, googleId: string) =>
   call(token, `${BASE}/${googleId}?sendUpdates=all`, { method: 'DELETE' });
+
+// ---- 토큰 갱신 (액세스 토큰은 1시간짜리라 만료되면 리프레시 토큰으로 새로 받는다)
+export const GOOGLE_CLIENT_ID = Platform.select({
+  android: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID,
+  ios: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
+  default: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
+});
+
+/** 유효한 액세스 토큰. 만료됐으면 갱신하고, 불가능하면 null */
+export async function freshAccessToken(): Promise<string | null> {
+  const t = await loadToken();
+  if (!t) return null;
+  if (t.expiresAt > Date.now() + 60_000) return t.accessToken;
+  if (!t.refreshToken || !GOOGLE_CLIENT_ID) return null;
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: GOOGLE_CLIENT_ID, grant_type: 'refresh_token', refresh_token: t.refreshToken }).toString(),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    await saveToken({ accessToken: j.access_token, refreshToken: j.refresh_token ?? t.refreshToken, expiresAt: Date.now() + (j.expires_in ?? 3600) * 1000 });
+    return j.access_token;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 동기화 병합: 구글에서 받아온 일정으로 로컬을 갱신하되,
+ * 아직 구글에 반영되지 못한(pendingSync) 로컬 변경은 구글의 옛 버전으로 덮어쓰지 않는다.
+ */
+export function mergePulled(local: CalEvent[], pulled: CalEvent[]): CalEvent[] {
+  const pendingByG = new Map(local.filter((e) => e.pendingSync && e.googleId).map((e) => [e.googleId!, e]));
+  const pulledG = new Set(pulled.map((e) => e.googleId));
+  const merged = pulled.map((p) => pendingByG.get(p.googleId!) ?? p);
+  return [...local.filter((e) => !e.googleId || !pulledG.has(e.googleId)), ...merged];
+}

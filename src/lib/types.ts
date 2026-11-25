@@ -38,6 +38,9 @@ export interface CalEvent {
   updatedAt: string;
 }
 
+/** 화면 테마: 시스템 설정을 따르거나, 라이트/다크/블랙(완전한 검정, OLED용) 고정 */
+export type ThemeChoice = 'system' | 'light' | 'dark' | 'black';
+
 export interface AppState {
   profiles: Profile[];
   events: CalEvent[];
@@ -45,6 +48,8 @@ export interface AppState {
   activeProfileId: string | null;
   /** 달력 칸에 음력 날짜 표시 */
   showLunar?: boolean;
+  /** 앱과 홈 위젯의 화면 테마 (기본: 시스템) */
+  theme?: ThemeChoice;
   google: { connected: boolean; email?: string; lastSync?: string };
 }
 

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { R, Theme, useTheme } from '../components/theme';
 import { Button, Row, Section } from '../components/ui';
+import { ThemePicker } from '../components/ThemePicker';
 import * as G from '../lib/google';
 import { pickAndImport, shareEvents } from '../lib/share';
 import { uid, useStore } from '../lib/store';
@@ -24,7 +25,7 @@ export default function Settings() {
   const t = useTheme();
   const st = useMemo(() => styles(t), [t]);
   const insets = useSafeAreaInsets();
-  const { state, shown, setGoogle, replaceEvents, importEvents, setShowLunar } = useStore();
+  const { state, shown, setGoogle, replaceEvents, importEvents, setShowLunar, setTheme } = useStore();
   const [busy, setBusy] = useState(false);
   const discovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
   // 설치형 클라이언트는 "com.googleusercontent.apps.<id>:/oauthredirect" 형태의 역방향 스킴 사용
@@ -99,6 +100,11 @@ export default function Settings() {
           <Button text="연결 해제" kind="danger" onPress={disconnect} />
         </View>
       ) : <Button text="구글 계정으로 연결" icon="logo-google" onPress={connect} disabled={!request} />}
+
+      <Section title="화면 테마">
+        <ThemePicker value={state.theme ?? 'system'} onChange={setTheme} />
+      </Section>
+      <Text style={st.note}>앱과 홈 위젯에 함께 적용돼요. 블랙은 완전한 검정 배경이라 OLED 화면에서 눈이 편하고 배터리도 아껴요.</Text>
 
       <Section title="표시">
         <Row icon="moon-outline" label="달력에 음력 표시" last

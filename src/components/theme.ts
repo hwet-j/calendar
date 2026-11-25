@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
+import { useStore } from '../lib/store';
+import type { ThemeChoice } from '../lib/types';
 
 const base = { primary: '#4F6BFF', danger: '#E5484D', sat: '#3B82F6', sun: '#EF4444' };
 
@@ -16,10 +18,26 @@ export const dark: typeof light = {
   shadow: '0 2px 12px rgba(0, 0, 0, 0.4)', fabShadow: '0 6px 16px rgba(124, 146, 255, 0.35)',
 };
 export type Theme = typeof light;
+/** 완전한 검정 배경 (OLED에서 꺼진 픽셀로 보임). 카드는 아주 어두운 회색으로 구분 */
+export const black: Theme = {
+  ...base, dark: true, primary: '#7C92FF',
+  bg: '#000000', card: '#111113', text: '#F5F5F7', sub: '#9A9FB1', faint: '#55596A',
+  line: '#212227', primarySoft: '#1C2142', input: '#1B1C21',
+  shadow: '0 0 0 1px rgba(255, 255, 255, 0.05)', fabShadow: '0 6px 16px rgba(124, 146, 255, 0.3)',
+};
+
+/** 선택한 테마(+시스템 설정)에 해당하는 팔레트 */
+export function paletteFor(choice: ThemeChoice | undefined, scheme: 'light' | 'dark' | null | undefined): Theme {
+  if (choice === 'black') return black;
+  if (choice === 'dark') return dark;
+  if (choice === 'light') return light;
+  return scheme === 'dark' ? dark : light;
+}
 
 export function useTheme(): Theme {
   const scheme = useColorScheme();
-  return useMemo(() => (scheme === 'dark' ? dark : light), [scheme]);
+  const { state } = useStore();
+  return useMemo(() => paletteFor(state.theme, scheme), [state.theme, scheme]);
 }
 
 export const R = { sm: 10, md: 14, lg: 20, pill: 999 };

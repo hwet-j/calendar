@@ -77,7 +77,8 @@ if (process.env.WIDGET_DUMP) {
   });
 }
 
-import { CalendarWidget, calendarLayout } from '../src/widget/CalendarWidget';
+import { CalendarWidget, calendarLayout, metrics } from '../src/widget/CalendarWidget';
+import { widgetScale } from '../src/widget/palette';
 import { applyAction, clearView, DEFAULT_VIEW, loadView, saveView } from '../src/widget/state';
 import { buildWidget } from '../src/widget/render';
 
@@ -183,10 +184,11 @@ test('위젯마다 보기 상태를 따로 저장·복원, 삭제하면 기본�
 if (process.env.WIDGET_DUMP) {
   test('dump calendar', () => {
     const lunarState = { ...calState, showLunar: true };
-    const variants: [string, AppState, number, number, 'light' | 'dark'][] = [
+    const variants: [string, AppState, number, number, 'light' | 'dark' | 'black'][] = [
       ['cal-light-420', calState, 330, 420, 'light'], ['cal-dark-420', calState, 330, 420, 'dark'],
       ['cal-light-260', calState, 330, 260, 'light'], ['cal-lunar-420', lunarState, 330, 420, 'light'],
     ];
+    variants.push(['cal-black-330', calState, 330, 420, 'black'], ['cal-light-330x300', calState, 330, 300, 'light'], ['cal-light-530', calState, 530, 520, 'light'], ['cal-black-530', calState, 530, 520, 'black']);
     for (const [name, st, w, h, mode] of variants)
       fs.writeFileSync(`${process.env.WIDGET_DUMP}/${name}.json`, JSON.stringify({ w, h, tree: render(<CalendarWidget state={st} now={now} widthDp={w} heightDp={h} mode={mode} />).tree }));
     fs.writeFileSync(`${process.env.WIDGET_DUMP}/agenda-toggle.json`, JSON.stringify({ w: 330, h: 260, tree: render(buildWidget(calState, { mode: 'agenda', monthOffset: 0 }, { width: 330, height: 260 }, now).light).tree }));
@@ -196,4 +198,70 @@ if (process.env.WIDGET_DUMP) {
 test('달력 위젯: 작은 크기에서도 가려진 일정은 날짜 옆 +N으로 알려줌', () => {
   const { texts } = render(<CalendarWidget state={calState} now={now} widthDp={330} heightDp={260} />);
   expect(texts.some((t) => /^\+\d+$/.test(t))).toBe(true);
+});
+
+test('위젯 확대 배율: 기본 폭 이하는 그대로, 커지면 완만하게(폭 증가분의 60%), 최대 1.4배', () => {
+  expect(widgetScale(250)).toBe(1);
+  expect(widgetScale(330)).toBe(1);
+  expect(widgetScale(400)).toBeCloseTo(1 + (400 / 330 - 1) * 0.6, 5);
+  expect(widgetScale(530)).toBeGreaterThan(1.3);
+  expect(widgetScale(530)).toBeLessThan(1.4);
+  expect(widgetScale(2000)).toBe(1.4);
+  expect(widgetScale(undefined)).toBe(1);
+});
+
+test('달력 위젯 헤더: 위젯이 커지면 년월·화살표·버튼이 함께, 하지만 적당히만 커짐', () => {
+  const title = (w: number) => nodes(render(<CalendarWidget state={calState} now={now} widthDp={w} heightDp={420} />).tree)
+    .find((n) => n.t === 'TextWidget' && n.props?.text === '2026년 11월')!.props!.style!;
+  const arrow = (w: number) => nodes(render(<CalendarWidget state={calState} now={now} widthDp={w} heightDp={420} />).tree)
+    .find((n) => n.t === 'TextWidget' && n.props?.text === '›')!.props!.style!;
+  const small = title(330), big = title(530);
+  expect(small.fontSize).toBe(15);
+  expect(Number(big.fontSize)).toBeGreaterThan(18);   // 눈에 띄게 커지되
+  expect(Number(big.fontSize)).toBeLessThanOrEqual(21); // 과하지 않게
+  expect(Number(arrow(530).fontSize)).toBeGreaterThan(Number(arrow(330).fontSize));
+  expect(metrics(530).plus).toBeGreaterThan(metrics(330).plus);
+  expect(metrics(530).plus).toBeLessThanOrEqual(Math.round(24 * 1.4));
+  // 본문(요일·날짜·막대)은 헤더보다 덜 커짐
+  expect(metrics(530).numFs / metrics(330).numFs).toBeLessThan(metrics(530).titleFs / metrics(330).titleFs);
+});
+
+test('넓은 위젯에서도 막대 줄의 폭 합계가 정확히 7칸', () => {
+  for (const w of [330, 420, 530]) {
+    const m = metrics(w), layout = calendarLayout(w, 520);
+    const { tree } = render(<CalendarWidget state={calState} now={now} widthDp={w} heightDp={520} />);
+    const rows = nodes(tree).filter((n) => n.t === 'FlexWidget' && n.props?.style?.height === m.laneH && n.props?.style?.flexDirection === 'row');
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const sum = kids(row).reduce((a, k) => a + Number(k.props?.style?.width ?? 0) + Number(k.props?.style?.marginLeft ?? 0) + Number(k.props?.style?.marginRight ?? 0), 0);
+      expect(sum).toBe(layout.colW * 7);
+    }
+  }
+});
+
+import { paletteFor, black, dark as darkTheme, light as lightTheme } from '../src/components/theme';
+
+test('앱 테마 선택: 시스템은 기기 설정을 따르고, 라이트/다크/블랙은 고정', () => {
+  expect(paletteFor(undefined, 'dark')).toBe(darkTheme);
+  expect(paletteFor('system', 'light')).toBe(lightTheme);
+  expect(paletteFor('system', 'dark')).toBe(darkTheme);
+  expect(paletteFor('light', 'dark')).toBe(lightTheme);   // 기기가 다크여도 라이트 고정
+  expect(paletteFor('dark', 'light')).toBe(darkTheme);
+  expect(paletteFor('black', 'light')).toBe(black);
+  expect(black.bg).toBe('#000000');                       // 완전한 검정
+  expect(black.dark).toBe(true);
+});
+
+test('위젯 테마: 시스템이면 라이트/다크 두 벌, 고정하면 항상 같은 화면(블랙은 #000000 배경)', () => {
+  const rootBg = (el: React.JSX.Element) => (nodes(render(el).tree).find((n) => n.t === 'FlexWidget')!.props!.style as Record<string, string>).backgroundColor;
+  const view = { mode: 'calendar' as const, monthOffset: 0 };
+  const info = { width: 330, height: 420 };
+  const sys = buildWidget({ ...calState, theme: 'system' }, view, info, now);
+  expect([rootBg(sys.light), rootBg(sys.dark)]).toEqual(['#FFFFFF', '#1A1C25']);
+  const blk = buildWidget({ ...calState, theme: 'black' }, view, info, now);
+  expect([rootBg(blk.light), rootBg(blk.dark)]).toEqual(['#000000', '#000000']); // 시스템이 라이트여도 블랙
+  const lt = buildWidget({ ...calState, theme: 'light' }, view, info, now);
+  expect([rootBg(lt.light), rootBg(lt.dark)]).toEqual(['#FFFFFF', '#FFFFFF']);
+  const ag = buildWidget({ ...calState, theme: 'black' }, { mode: 'agenda', monthOffset: 0 }, info, now);
+  expect(rootBg(ag.light)).toBe('#000000');
 });

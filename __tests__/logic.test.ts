@@ -1,4 +1,4 @@
-import { expand, monthGrid, onDay } from '../src/lib/dates';
+import { chunkWeeks, expand, monthGrid, onDay } from '../src/lib/dates';
 import { visibleEvents } from '../src/lib/filter';
 import { fromGoogle, toGoogle } from '../src/lib/google';
 import { fromICS, toICS } from '../src/lib/ics';
@@ -56,4 +56,16 @@ test('구글 변환 왕복 (참석자·알림·종일)', () => {
   const back = fromGoogle(g, 'a', 'x')!;
   expect(back).toMatchObject({ googleId: 'gid', attendees: ['a@b.co'], reminderMinutes: 10, allDay: true });
   expect(new Date(back.end).getDate()).toBe(6);
+});
+
+test('주 단위 분할: 항상 6주 x 7일, 각 주는 일요일 시작·토요일 끝', () => {
+  for (const [y, m] of [[2026, 10], [2026, 1], [2027, 1], [2026, 11]]) {
+    const weeks = chunkWeeks(monthGrid(y, m));
+    expect(weeks).toHaveLength(6);
+    for (const w of weeks) {
+      expect(w).toHaveLength(7);
+      expect(w[0].getDay()).toBe(0);
+      expect(w[6].getDay()).toBe(6);
+    }
+  }
 });

@@ -15,6 +15,13 @@ export function monthGrid(year: number, month: number): Date[] {
   return Array.from({ length: 42 }, (_, i) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
 }
 
+/** 날짜 배열을 7일(일~토) 단위 주로 나눔 */
+export function chunkWeeks(days: Date[]): Date[][] {
+  const out: Date[][] = [];
+  for (let i = 0; i < days.length; i += 7) out.push(days.slice(i, i + 7));
+  return out;
+}
+
 function shift(d: Date, repeat: CalEvent['repeat'], n: number): Date {
   const r = new Date(d);
   if (repeat === 'daily') r.setDate(r.getDate() + n);

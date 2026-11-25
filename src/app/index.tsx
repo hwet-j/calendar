@@ -5,7 +5,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { R, Theme, useTheme } from '../components/theme';
-import { dayKey, expand, fmtTime, monthGrid, onDay, sameDay } from '../lib/dates';
+import { chunkWeeks, dayKey, expand, fmtTime, monthGrid, onDay, sameDay } from '../lib/dates';
 import { profileOf } from '../lib/filter';
 import { useStore } from '../lib/store';
 
@@ -21,6 +21,7 @@ export default function Home() {
   const [sel, setSel] = useState(now);
 
   const grid = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth()), [cursor]);
+  const weeks = useMemo(() => chunkWeeks(grid), [grid]);
   const occ = useMemo(() => expand(shown, grid[0], new Date(grid[41].getTime() + 86400000)), [shown, grid]);
   const byDay = useMemo(() => {
     const m = new Map<string, typeof occ>();
@@ -71,8 +72,10 @@ export default function Home() {
             <Text key={d} style={[s.dow, i === 0 && { color: t.sun }, i === 6 && { color: t.sat }]}>{d}</Text>
           ))}
         </View>
-        <View style={s.grid}>
-          {grid.map((d) => {
+        {/* 7칸을 퍼센트 폭+줄바꿈으로 나누면 안드로이드에서 반올림 오차로 6칸만 들어가므로, 주 단위 행 + flex:1 로 배치 */}
+        {weeks.map((week, wi) => (
+        <View key={wi} style={s.week}>
+          {week.map((d) => {
             const items = byDay.get(dayKey(d)) ?? [];
             const out = d.getMonth() !== cursor.getMonth();
             const isSel = sameDay(d, sel);
@@ -97,6 +100,7 @@ export default function Home() {
             );
           })}
         </View>
+        ))}
       </View>
 
       <View style={s.agendaHead}>
@@ -191,8 +195,8 @@ const styles = (t: Theme) => StyleSheet.create({
   calendar: { marginHorizontal: 16, backgroundColor: t.card, borderRadius: R.lg, paddingHorizontal: 6, paddingTop: 10, paddingBottom: 6, boxShadow: t.shadow },
   row: { flexDirection: 'row' },
   dow: { flex: 1, textAlign: 'center', color: t.sub, fontSize: 12, fontWeight: '600', paddingBottom: 6 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  cell: { width: `${100 / 7}%`, height: 48, alignItems: 'center', paddingTop: 2 },
+  week: { flexDirection: 'row' },
+  cell: { flex: 1, height: 48, alignItems: 'center', paddingTop: 2 },
   num: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   numT: { fontSize: 15, color: t.text, fontWeight: '500' },
   dots: { flexDirection: 'row', gap: 3, marginTop: 2, height: 5 },

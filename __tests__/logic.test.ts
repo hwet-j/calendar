@@ -283,3 +283,40 @@ test('일정 색상은 ICS 왕복에서 유지', () => {
   const [back] = fromICS(toICS([ev({ color: '#8E44AD' })]), 'a', () => 'n');
   expect(back.color).toBe('#8E44AD');
 });
+
+import { parseDateQuery, searchEvents } from '../src/lib/jump';
+
+test('날짜 입력 해석: 연/연월/연월일/월 형식', () => {
+  const ref = new Date(2026, 10, 25);
+  expect(parseDateQuery('2027', ref)).toEqual({ year: 2027, month: 11 });
+  expect(parseDateQuery('2027년', ref)).toEqual({ year: 2027, month: 11 });
+  for (const q of ['2027.3', '2027-3', '2027/03', '2027 3', '2027년 3월', '2027년3월'])
+    expect(parseDateQuery(q, ref)).toEqual({ year: 2027, month: 3, day: undefined });
+  for (const q of ['2027.3.15', '2027-03-15', '2027년 3월 15일', '2027 3 15'])
+    expect(parseDateQuery(q, ref)).toEqual({ year: 2027, month: 3, day: 15 });
+  expect(parseDateQuery('3월', ref)).toEqual({ year: 2026, month: 3, day: undefined });
+  expect(parseDateQuery('3월 5일', ref)).toEqual({ year: 2026, month: 3, day: 5 });
+});
+
+test('날짜 입력 해석: 잘못된 값·일반 검색어는 null', () => {
+  const ref = new Date(2026, 10, 25);
+  for (const q of ['', '   ', '2027.13', '2027.2.30', '13월', '1899', '2101', '회의', '치과 2027', '2027.3.15.1'])
+    expect(parseDateQuery(q, ref)).toBeNull();
+  expect(parseDateQuery('2024.2.29', ref)).toEqual({ year: 2024, month: 2, day: 29 }); // 윤년
+});
+
+test('일정 검색: 제목/장소/메모, 대소문자 무시, 가까운 날짜 순, 반복 일정은 다음 발생일로 이동', () => {
+  const today = new Date(2026, 10, 25);
+  const events = [
+    ev({ id: '1', title: '치과 검진', start: new Date(2027, 2, 3, 10).toISOString(), end: new Date(2027, 2, 3, 11).toISOString() }),
+    ev({ id: '2', title: '점심', location: '치과 앞 식당', start: new Date(2026, 10, 27, 12).toISOString(), end: new Date(2026, 10, 27, 13).toISOString() }),
+    ev({ id: '3', title: '헬스', notes: 'DENTAL 예약 메모', start: new Date(2026, 10, 1, 7).toISOString(), end: new Date(2026, 10, 1, 8).toISOString() }),
+    ev({ id: '4', title: '주간 치과 상담', repeat: 'weekly', start: new Date(2026, 0, 7, 9).toISOString(), end: new Date(2026, 0, 7, 10).toISOString() }),
+  ];
+  expect(searchEvents(events, '치과', today).map((h) => h.event.id)).toEqual(['4', '2', '1']);
+  const weekly = searchEvents(events, '치과', today).find((h) => h.event.id === '4')!;
+  expect([weekly.date.getMonth(), weekly.date.getDate()]).toEqual([10, 25]); // 2026-11-25(수) = 오늘이 수요일
+  expect(searchEvents(events, 'dental', today).map((h) => h.event.id)).toEqual(['3']);
+  expect(searchEvents(events, '  ', today)).toEqual([]);
+  expect(searchEvents(events, '없는검색어', today)).toEqual([]);
+});

@@ -5,6 +5,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { R, Theme, useTheme } from '../components/theme';
+import { JumpSheet } from '../components/JumpSheet';
 import { LANE_H, MORE_H, NUM_H, WeekRow } from '../components/WeekRow';
 import { lastDay, layoutWeek } from '../lib/layout';
 import { chunkWeeks, dayKey, expand, fmtTime, monthGrid, onDay, sameDay } from '../lib/dates';
@@ -23,6 +24,7 @@ export default function Home() {
   const now = new Date();
   const [cursor, setCursor] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
   const [sel, setSel] = useState(now);
+  const [jumpOpen, setJumpOpen] = useState(false);
 
   const grid = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth()), [cursor]);
   const lunarOf = useMemo(() => {
@@ -45,6 +47,7 @@ export default function Home() {
 
   const selLunar = solarToLunar(sel);
   const move = (n: number) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1));
+  const jumpTo = (d: Date) => { setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); setSel(d); };
   const goToday = () => { setCursor(new Date(now.getFullYear(), now.getMonth(), 1)); setSel(now); };
   const tap = () => Haptics.selectionAsync().catch(() => {});
   const isThisMonth = cursor.getFullYear() === now.getFullYear() && cursor.getMonth() === now.getMonth();
@@ -52,10 +55,13 @@ export default function Home() {
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
-        <View>
+        <Pressable onPress={() => setJumpOpen(true)} accessibilityRole="button" accessibilityLabel={`${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월, 눌러서 연월 선택 또는 검색`}>
           <Text style={s.year}>{cursor.getFullYear()}</Text>
-          <Text style={s.month}>{cursor.getMonth() + 1}월</Text>
-        </View>
+          <View style={s.monthRow}>
+            <Text style={s.month}>{cursor.getMonth() + 1}월</Text>
+            <Ionicons name="chevron-down" size={20} color={t.sub} style={{ marginTop: 10 }} />
+          </View>
+        </Pressable>
         <View style={s.headerRight}>
           <IconBtn s={s} t={t} name="chevron-back" onPress={() => move(-1)} label="이전 달" />
           <IconBtn s={s} t={t} name="chevron-forward" onPress={() => move(1)} label="다음 달" />
@@ -145,6 +151,8 @@ export default function Home() {
       </View>
       </ScrollView>
 
+      <JumpSheet visible={jumpOpen} cursor={cursor} events={shown} profiles={state.profiles} onClose={() => setJumpOpen(false)} onJump={jumpTo} />
+
       <Pressable
         style={[s.fab, { bottom: insets.bottom + 20 }]}
         onPress={() => router.push({ pathname: '/event/[id]', params: { id: 'new', date: sel.toISOString() } })}
@@ -177,6 +185,7 @@ const styles = (t: Theme) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.bg },
   header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
   year: { fontSize: 13, fontWeight: '600', color: t.sub },
+  monthRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   month: { fontSize: 34, fontWeight: '800', color: t.text, letterSpacing: -0.5, lineHeight: 40 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },

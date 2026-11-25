@@ -4,28 +4,26 @@ import { addDays, expand, fmtTime, sameDay, startOfDay } from '../lib/dates';
 import { visibleEvents } from '../lib/filter';
 import type { AppState, Occurrence } from '../lib/types';
 
-type Hex = `#${string}`;
-type Pal = Record<'bg' | 'item' | 'text' | 'sub' | 'primary' | 'soft', Hex>;
-const PALETTE: Record<'light' | 'dark', Pal> = {
-  light: { bg: '#FFFFFF', item: '#F4F5F9', text: '#14161F', sub: '#6B7080', primary: '#4F6BFF', soft: '#EAEEFF' },
-  dark: { bg: '#1A1C25', item: '#262936', text: '#F2F3F7', sub: '#9A9FB1', primary: '#7C92FF', soft: '#2B3158' },
-};
+import { PALETTE, widgetScale, type Hex, type Pal, type WidgetTheme } from './palette';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 const ROW_H = 46; // 일정 카드 1개 높이(dp, 여백 포함)
 const HEADER_H = 74;
 
 /** 위젯 높이(dp)에 맞춰 보여줄 일정 개수 결정 (1~6) */
-export const visibleRows = (heightDp?: number) =>
-  Math.max(1, Math.min(6, Math.floor(((heightDp ?? 150) - HEADER_H - 12) / ROW_H)));
+export const visibleRows = (heightDp?: number, widthDp?: number) =>
+  Math.max(1, Math.min(6, Math.floor(((heightDp ?? 150) - Math.round(HEADER_H * widgetScale(widthDp)) - 12) / ROW_H)));
 
-interface Props { state: AppState; now?: Date; heightDp?: number; mode?: 'light' | 'dark' }
+interface Props { state: AppState; now?: Date; widthDp?: number; heightDp?: number; mode?: WidgetTheme }
 
-export function AgendaWidget({ state, now = new Date(), heightDp, mode = 'light' }: Props) {
+export function AgendaWidget({ state, now = new Date(), widthDp, heightDp, mode = 'light' }: Props) {
   const c = PALETTE[mode];
+  const sc = widgetScale(widthDp); // 위젯이 커지면 헤더도 적당히 커짐
+  const r = (n: number) => Math.round(n * sc);
+  const onPrimary = mode === 'light' ? '#FFFFFF' : '#0B0C10';
   const today = startOfDay(now);
   const all = expand(visibleEvents(state), today, addDays(today, 3)).filter((o) => o.end >= now);
-  const max = visibleRows(heightDp);
+  const max = visibleRows(heightDp, widthDp);
   const shown = all.slice(0, max);
   const more = all.length - shown.length;
   const scope = state.activeProfileId ? state.profiles.find((p) => p.id === state.activeProfileId)?.name ?? '' : '모든 프로필';
@@ -36,18 +34,24 @@ export function AgendaWidget({ state, now = new Date(), heightDp, mode = 'light'
       style={{ height: 'match_parent', width: 'match_parent', backgroundColor: c.bg, borderRadius: 24, padding: 14, flexDirection: 'column' }}
     >
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-        <TextWidget text={String(now.getDate())} style={{ fontSize: 34, fontWeight: 'bold', color: c.text, marginRight: 10 }} />
+        <TextWidget text={String(now.getDate())} style={{ fontSize: r(34), fontWeight: 'bold', color: c.text, marginRight: 10 }} />
         <FlexWidget style={{ flex: 1, flexDirection: 'column', marginRight: 8 }}>
-          <TextWidget text={`${DOW[now.getDay()]}요일`} style={{ fontSize: 14, fontWeight: 'bold', color: c.text }} />
-          <TextWidget text={`${now.getMonth() + 1}월 · ${scope}`} style={{ fontSize: 12, color: c.sub }} maxLines={1} truncate="END" />
+          <TextWidget text={`${DOW[now.getDay()]}요일`} style={{ fontSize: r(14), fontWeight: 'bold', color: c.text }} />
+          <TextWidget text={`${now.getMonth() + 1}월 · ${scope}`} style={{ fontSize: r(12), color: c.sub }} maxLines={1} truncate="END" />
+        </FlexWidget>
+        <FlexWidget
+          clickAction="TOGGLE_MODE" accessibilityLabel="달력 보기로 전환"
+          style={{ height: r(22), paddingHorizontal: r(9), borderRadius: r(11), backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center', marginRight: 6 }}
+        >
+          <TextWidget text="달력" style={{ fontSize: r(11), fontWeight: 'bold', color: c.primary }} />
         </FlexWidget>
         <FlexWidget
           clickAction="OPEN_URI"
           clickActionData={{ uri: 'calendarapp://event/new' }}
           accessibilityLabel="일정 추가"
-          style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' }}
+          style={{ width: r(36), height: r(36), borderRadius: r(18), backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center' }}
         >
-          <TextWidget text="+" style={{ fontSize: 22, fontWeight: 'bold', color: '#FFFFFF' }} />
+          <TextWidget text="+" style={{ fontSize: r(22), fontWeight: 'bold', color: onPrimary }} />
         </FlexWidget>
       </FlexWidget>
 

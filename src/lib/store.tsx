@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import type { AppState, CalEvent, Profile } from './types';
+import type { AppState, CalEvent, Profile, ThemeChoice } from './types';
 import { visibleEvents } from './filter';
 
 export const STORAGE_KEY = 'calendar-app/state/v1';
@@ -27,6 +27,7 @@ type Ctx = {
   deleteProfile(id: string): void;
   setGoogle(g: AppState['google']): void;
   setShowLunar(v: boolean): void;
+  setTheme(t: ThemeChoice): void;
   replaceEvents(list: CalEvent[]): void;
 };
 
@@ -77,6 +78,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }),
     setGoogle: (google) => upd((s) => ({ ...s, google })),
     setShowLunar: (showLunar) => upd((s) => ({ ...s, showLunar })),
+    setTheme: (theme) => upd((s) => ({ ...s, theme })),
   }), [state, ready, upd]);
 
   return <C.Provider value={value}>{children}</C.Provider>;

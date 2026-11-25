@@ -136,3 +136,13 @@ test('음력 회귀: 2000~2050 설날·추석·부처님오신날·윤달 시작
   }
   expect(Object.keys(anchors.seollal)).toHaveLength(51);
 });
+
+import { isOAuthRedirect } from '../src/lib/oauth';
+
+test('OAuth 리디렉션 주소만 라우터에서 제외, 일반 딥링크는 통과', () => {
+  const id = 'com.googleusercontent.apps.312013010912-abc';
+  for (const u of [`${id}:/oauthredirect?code=4/0A&state=x`, `${id}:/oauthredirect`, 'calendarapp:///oauthredirect?code=1', 'calendarapp:////oauthredirect?code=1', '/oauthredirect?code=1'])
+    expect(isOAuthRedirect(u)).toBe(true);
+  for (const u of ['calendarapp://event/new', 'calendarapp://event/abc123', '/event/3', '/settings', 'calendarapp:///profiles', 'calendarapp://event/oauthredirect-note'])
+    expect(isOAuthRedirect(u)).toBe(false);
+});

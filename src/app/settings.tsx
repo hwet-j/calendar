@@ -2,7 +2,7 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 import React, { useMemo, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { R, Theme, useTheme } from '../components/theme';
@@ -24,7 +24,7 @@ export default function Settings() {
   const t = useTheme();
   const st = useMemo(() => styles(t), [t]);
   const insets = useSafeAreaInsets();
-  const { state, shown, setGoogle, replaceEvents, importEvents } = useStore();
+  const { state, shown, setGoogle, replaceEvents, importEvents, setShowLunar } = useStore();
   const [busy, setBusy] = useState(false);
   const discovery = AuthSession.useAutoDiscovery('https://accounts.google.com');
   // 설치형 클라이언트는 "com.googleusercontent.apps.<id>:/oauthredirect" 형태의 역방향 스킴 사용
@@ -103,6 +103,11 @@ export default function Settings() {
           <Button text="연결 해제" kind="danger" onPress={disconnect} />
         </View>
       ) : <Button text="구글 계정으로 연결" icon="logo-google" onPress={connect} disabled={!request} />}
+
+      <Section title="표시">
+        <Row icon="moon-outline" label="달력에 음력 표시" last
+          right={<Switch value={!!state.showLunar} onValueChange={setShowLunar} trackColor={{ true: t.primary }} />} />
+      </Section>
 
       <Section title="일정 공유">
         <Row icon="share-outline" label={`현재 보기 내보내기 (${shown.length}개)`} onPress={() => shareEvents(shown)} right={<Ionicons name="chevron-forward" size={18} color={t.faint} />} />

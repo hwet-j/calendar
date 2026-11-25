@@ -26,6 +26,7 @@ type Ctx = {
   saveProfile(p: Profile): void;
   deleteProfile(id: string): void;
   setGoogle(g: AppState['google']): void;
+  setShowLunar(v: boolean): void;
   replaceEvents(list: CalEvent[]): void;
 };
 
@@ -75,6 +76,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       };
     }),
     setGoogle: (google) => upd((s) => ({ ...s, google })),
+    setShowLunar: (showLunar) => upd((s) => ({ ...s, showLunar })),
   }), [state, ready, upd]);
 
   return <C.Provider value={value}>{children}</C.Provider>;

@@ -1,3 +1,4 @@
+import { lunarYearlyStarts } from './dates';
 import type { CalEvent, Repeat } from './types';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -21,8 +22,16 @@ export function toICS(events: CalEvent[]): string {
     lines.push(`SUMMARY:${esc(e.title)}`);
     if (e.location) lines.push(`LOCATION:${esc(e.location)}`);
     if (e.notes) lines.push(`DESCRIPTION:${esc(e.notes)}`);
-    const r = RRULE[e.repeat];
-    if (r) lines.push(`RRULE:${r}`);
+    if (e.lunar && e.repeat === 'yearly') {
+      // ICS에는 음력 반복이 없으므로 앞으로 20년치 날짜를 RDATE로 풀어 내보내고, 우리 앱용 X-LUNAR도 함께 기록
+      const starts = lunarYearlyStarts(e);
+      if (starts.length)
+        lines.push(e.allDay ? `RDATE;VALUE=DATE:${starts.map(dateOnly).join(',')}` : `RDATE:${starts.map(utc).join(',')}`);
+      lines.push(`X-LUNAR:${e.lunar.month},${e.lunar.day},${e.lunar.leap ? 1 : 0}`);
+    } else {
+      const r = RRULE[e.repeat];
+      if (r) lines.push(`RRULE:${r}`);
+    }
     if (e.reminderMinutes !== undefined)
       lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `TRIGGER:-PT${e.reminderMinutes}M`, `DESCRIPTION:${esc(e.title)}`, 'END:VALARM');
     lines.push('END:VEVENT');
@@ -52,13 +61,15 @@ export function fromICS(text: string, profileId: string, newId: () => string): C
         const en = cur.DTEND ? parseDate(cur.DTEND) : st;
         let end = isNaN(en.d.getTime()) ? st.d : en.d;
         if (st.allDay && cur.DTEND) end = new Date(end.getTime() - 86400000);
+        const lm = /^(\d+),(\d+),([01])$/.exec(cur['X-LUNAR'] ?? '');
         const f = /FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/.exec(cur.RRULE ?? '')?.[1];
         out.push({
           id: newId(), profileId, title: unesc(cur.SUMMARY ?? '(제목 없음)'),
           start: st.d.toISOString(), end: end.toISOString(), allDay: st.allDay,
           location: cur.LOCATION ? unesc(cur.LOCATION) : undefined,
           notes: cur.DESCRIPTION ? unesc(cur.DESCRIPTION) : undefined,
-          repeat: (f ? f.toLowerCase() : 'none') as Repeat, reminderMinutes: alarm,
+          repeat: (lm ? 'yearly' : f ? f.toLowerCase() : 'none') as Repeat, reminderMinutes: alarm,
+          lunar: lm ? { month: +lm[1], day: +lm[2], leap: lm[3] === '1' } : undefined,
           attendees: [], updatedAt: new Date().toISOString(),
         });
       }

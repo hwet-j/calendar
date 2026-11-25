@@ -35,9 +35,14 @@ jobs:
           TZ=Asia/Seoul npx jest
 
       - name: Generate native Android project (CNG)
+        # 구글 OAuth 클라이언트 ID는 비밀값이 아니라서 저장소 Variables(Settings > Secrets and variables > Actions > Variables)에 둡니다.
+        env:
+          EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID: ${{ vars.GOOGLE_CLIENT_ID_ANDROID }}
         run: npx expo prebuild --platform android --no-install
 
       - name: Build release APK (arm64)
+        env:
+          EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID: ${{ vars.GOOGLE_CLIENT_ID_ANDROID }}
         working-directory: android
         run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 

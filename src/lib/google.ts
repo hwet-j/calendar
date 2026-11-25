@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { lunarYearlyStarts } from './dates';
 import type { CalEvent, Repeat } from './types';
 
 /**
@@ -25,13 +26,29 @@ const RRULE: Record<Repeat, string[] | undefined> = {
 };
 const dOnly = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const utcStamp = (d: Date) =>
+  `${d.getUTCFullYear()}${pad2(d.getUTCMonth() + 1)}${pad2(d.getUTCDate())}T${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}00Z`;
+
+/** 구글엔 음력 반복이 없어서 앞으로 20년치 양력 날짜를 RDATE 목록으로 보냄 */
+function recurrenceOf(e: CalEvent): string[] | undefined {
+  if (e.lunar && e.repeat === 'yearly') {
+    const starts = lunarYearlyStarts(e);
+    if (!starts.length) return undefined;
+    return [e.allDay
+      ? `RDATE;VALUE=DATE:${starts.map((d) => dOnly(d).replace(/-/g, '')).join(',')}`
+      : `RDATE:${starts.map(utcStamp).join(',')}`];
+  }
+  return RRULE[e.repeat];
+}
+
 export function toGoogle(e: CalEvent) {
   const s = new Date(e.start), en = new Date(e.end);
   return {
     summary: e.title, location: e.location, description: e.notes,
     start: e.allDay ? { date: dOnly(s) } : { dateTime: s.toISOString() },
     end: e.allDay ? { date: dOnly(new Date(en.getTime() + 86400000)) } : { dateTime: en.toISOString() },
-    recurrence: RRULE[e.repeat],
+    recurrence: recurrenceOf(e),
     attendees: e.attendees.length ? e.attendees.map((email) => ({ email })) : undefined,
     reminders: e.reminderMinutes !== undefined
       ? { useDefault: false, overrides: [{ method: 'popup', minutes: e.reminderMinutes }] } : undefined,
@@ -83,6 +100,8 @@ export async function pullEvents(token: string, profileId: string, newId: () => 
     for (const g of data.items ?? []) {
       const prev = byGid.get(g.id);
       const ev = fromGoogle(g, prev?.profileId ?? profileId, prev?.id ?? newId());
+      // 음력 반복은 구글에서 RDATE로만 오므로, 앱에 있던 음력 설정을 유지
+      if (ev && prev?.lunar) { ev.lunar = prev.lunar; ev.repeat = prev.repeat; }
       if (ev) out.push(ev);
     }
     pageToken = data.nextPageToken;

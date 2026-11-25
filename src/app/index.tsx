@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { R, Theme, useTheme } from '../components/theme';
 import { chunkWeeks, dayKey, expand, fmtTime, monthGrid, onDay, sameDay } from '../lib/dates';
 import { profileOf } from '../lib/filter';
+import { fmtLunar, lunarCell, solarToLunar } from '../lib/lunar';
 import { useStore } from '../lib/store';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
@@ -16,11 +17,17 @@ export default function Home() {
   const s = useMemo(() => styles(t), [t]);
   const insets = useSafeAreaInsets();
   const { state, shown, setActive } = useStore();
+  const showLunar = !!state.showLunar;
   const now = new Date();
   const [cursor, setCursor] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
   const [sel, setSel] = useState(now);
 
   const grid = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth()), [cursor]);
+  const lunarOf = useMemo(() => {
+    const m = new Map<string, ReturnType<typeof solarToLunar>>();
+    for (const d of grid) m.set(dayKey(d), solarToLunar(d));
+    return m;
+  }, [grid]);
   const weeks = useMemo(() => chunkWeeks(grid), [grid]);
   const occ = useMemo(() => expand(shown, grid[0], new Date(grid[41].getTime() + 86400000)), [shown, grid]);
   const byDay = useMemo(() => {
@@ -30,6 +37,7 @@ export default function Home() {
   }, [occ, grid]);
   const list = byDay.get(dayKey(sel)) ?? onDay(expand(shown, sel, new Date(sel.getTime() + 86400000)), sel);
 
+  const selLunar = solarToLunar(sel);
   const move = (n: number) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1));
   const goToday = () => { setCursor(new Date(now.getFullYear(), now.getMonth(), 1)); setSel(now); };
   const tap = () => Haptics.selectionAsync().catch(() => {});
@@ -93,6 +101,11 @@ export default function Home() {
                     isSel && { color: '#fff', fontWeight: '800' },
                   ]}>{d.getDate()}</Text>
                 </View>
+                {showLunar && (
+                  <Text style={[s.lunarT, out && { opacity: 0.4 }]} numberOfLines={1}>
+                    {lunarOf.get(dayKey(d)) ? lunarCell(lunarOf.get(dayKey(d))!) : ''}
+                  </Text>
+                )}
                 <View style={s.dots}>
                   {colors.map((c) => <View key={c} style={[s.dot, { backgroundColor: c }, out && { opacity: 0.4 }]} />)}
                 </View>
@@ -106,6 +119,7 @@ export default function Home() {
       <View style={s.agendaHead}>
         <Text style={s.agendaTitle}>{sel.getMonth() + 1}월 {sel.getDate()}일 {DOW[sel.getDay()]}요일</Text>
         {list.length > 0 && <Text style={s.count}>{list.length}개</Text>}
+        {selLunar && <Text style={s.lunarHead}>{fmtLunar(selLunar)}</Text>}
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 96, gap: 10 }}>
         {list.length === 0 && (
@@ -138,6 +152,7 @@ export default function Home() {
                   <View style={[s.pdot, { backgroundColor: p.color }]} />
                   <Text style={s.metaT}>{p.name}</Text>
                   {!!o.event.location && (<><Ionicons name="location-outline" size={12} color={t.sub} /><Text style={s.metaT} numberOfLines={1}>{o.event.location}</Text></>)}
+                  {o.event.lunar && (<><Ionicons name="moon-outline" size={12} color={t.sub} /><Text style={s.metaT}>{fmtLunar(o.event.lunar)}</Text></>)}
                   {o.event.repeat !== 'none' && <Ionicons name="repeat" size={12} color={t.sub} />}
                   {o.event.reminderMinutes !== undefined && <Ionicons name="notifications-outline" size={12} color={t.sub} />}
                   {o.event.attendees.length > 0 && (<><Ionicons name="people-outline" size={13} color={t.sub} /><Text style={s.metaT}>{o.event.attendees.length}</Text></>)}
@@ -196,9 +211,11 @@ const styles = (t: Theme) => StyleSheet.create({
   row: { flexDirection: 'row' },
   dow: { flex: 1, textAlign: 'center', color: t.sub, fontSize: 12, fontWeight: '600', paddingBottom: 6 },
   week: { flexDirection: 'row' },
-  cell: { flex: 1, height: 48, alignItems: 'center', paddingTop: 2 },
+  cell: { flex: 1, minHeight: 48, alignItems: 'center', paddingTop: 2 },
   num: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   numT: { fontSize: 15, color: t.text, fontWeight: '500' },
+  lunarT: { fontSize: 9, color: t.sub, marginTop: 0, height: 11 },
+  lunarHead: { fontSize: 12, color: t.sub, marginLeft: 'auto' },
   dots: { flexDirection: 'row', gap: 3, marginTop: 2, height: 5 },
   dot: { width: 5, height: 5, borderRadius: 3 },
   agendaHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },

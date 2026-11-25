@@ -69,3 +69,70 @@ test('주 단위 분할: 항상 6주 x 7일, 각 주는 일요일 시작·토요
     }
   }
 });
+
+import { fmtLunar, lunarToSolar, solarToLunar } from '../src/lib/lunar';
+import { lunarYearlyStarts } from '../src/lib/dates';
+
+const ymd = (d: Date | null) => d && [d.getFullYear(), d.getMonth() + 1, d.getDate()].join('-');
+
+test('음력 변환: 설날·추석', () => {
+  expect(solarToLunar(new Date(2026, 1, 17))).toMatchObject({ year: 2026, month: 1, day: 1, leap: false });
+  expect(solarToLunar(new Date(2026, 8, 25))).toMatchObject({ month: 8, day: 15 });
+  expect(ymd(lunarToSolar(2026, { month: 8, day: 15, leap: false }))).toBe('2026-9-25');
+  expect(ymd(lunarToSolar(2027, { month: 8, day: 15, leap: false }))).toBe('2027-9-15');
+  // 한국 음력은 KST 기준이라 중국 음력과 하루 다를 수 있음: 2028 설날은 1/27
+  expect(ymd(lunarToSolar(2028, { month: 1, day: 1, leap: false }))).toBe('2028-1-27');
+  expect(fmtLunar({ month: 6, day: 3, leap: true })).toBe('음력 윤6월 3일');
+});
+
+test('윤달: 있는 해는 윤달, 없는 해는 같은 숫자의 평달로 대체', () => {
+  // 2025년은 윤6월이 있음
+  expect(ymd(lunarToSolar(2025, { month: 6, day: 1, leap: true }))).toBe('2025-7-25');
+  // 2026년은 윤6월이 없음 → 평달 6월 1일
+  expect(ymd(lunarToSolar(2026, { month: 6, day: 1, leap: true }))).toBe(ymd(lunarToSolar(2026, { month: 6, day: 1, leap: false })));
+});
+
+test('음력 생일 매년 반복: 해마다 양력 날짜가 달라짐', () => {
+  const birthday = ev({
+    id: 'b', title: '엄마 생신', allDay: true, repeat: 'yearly', lunar: { month: 8, day: 15, leap: false },
+    start: new Date(2026, 8, 25).toISOString(), end: new Date(2026, 8, 25).toISOString(),
+  });
+  const occ = expand([birthday], new Date(2026, 0, 1), new Date(2029, 0, 1));
+  expect(occ.map((o) => ymd(o.start))).toEqual(['2026-9-25', '2027-9-15', '2028-10-3']);
+  // 2027 구간만 조회해도 그 해 것만 나옴
+  expect(expand([birthday], new Date(2027, 0, 1), new Date(2028, 0, 1)).map((o) => ymd(o.start))).toEqual(['2027-9-15']);
+  // 시작일 이전은 나오지 않음
+  expect(expand([birthday], new Date(2020, 0, 1), new Date(2026, 0, 1))).toHaveLength(0);
+});
+
+test('음력 반복 일정은 시각을 유지', () => {
+  const e = ev({ repeat: 'yearly', lunar: { month: 1, day: 1, leap: false }, start: new Date(2026, 1, 17, 9, 30).toISOString(), end: new Date(2026, 1, 17, 10, 30).toISOString() });
+  const [, second] = expand([e], new Date(2026, 0, 1), new Date(2028, 0, 1));
+  expect([second.start.getHours(), second.start.getMinutes(), ymd(second.start)]).toEqual([9, 30, '2027-2-7']);
+});
+
+test('ICS/구글: 음력 반복은 RDATE로 내보내고, ICS는 왕복 시 음력 설정 복원', () => {
+  const e = ev({ allDay: true, repeat: 'yearly', lunar: { month: 8, day: 15, leap: false }, start: new Date(2026, 8, 25).toISOString(), end: new Date(2026, 8, 25).toISOString() });
+  expect(lunarYearlyStarts(e)).toHaveLength(19);
+  const ics = toICS([e]);
+  expect(ics).toContain('RDATE;VALUE=DATE:20270915,20281003');
+  expect(ics).not.toContain('RRULE');
+  const [back] = fromICS(ics, 'a', () => 'n');
+  expect(back).toMatchObject({ repeat: 'yearly', lunar: { month: 8, day: 15, leap: false } });
+  const g = toGoogle(e);
+  expect(g.recurrence?.[0]).toMatch(/^RDATE;VALUE=DATE:20270915,20281003/);
+});
+
+import anchors from './fixtures/lunar-anchors.json';
+
+test('음력 회귀: 2000~2050 설날·추석·부처님오신날·윤달 시작이 천문 계산 기준값과 일치', () => {
+  const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  for (const [y, solar] of Object.entries(anchors.seollal)) expect(iso(lunarToSolar(+y, { month: 1, day: 1, leap: false })!)).toBe(solar);
+  for (const [y, solar] of Object.entries(anchors.chuseok)) expect(iso(lunarToSolar(+y, { month: 8, day: 15, leap: false })!)).toBe(solar);
+  for (const [y, solar] of Object.entries(anchors.buddha)) expect(iso(lunarToSolar(+y, { month: 4, day: 8, leap: false })!)).toBe(solar);
+  for (const [solar, month] of anchors.leapStarts as [string, number][]) {
+    const [y, m, d] = solar.split('-').map(Number);
+    expect(solarToLunar(new Date(y, m - 1, d))).toMatchObject({ month, day: 1, leap: true });
+  }
+  expect(Object.keys(anchors.seollal)).toHaveLength(51);
+});

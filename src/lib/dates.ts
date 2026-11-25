@@ -1,3 +1,4 @@
+import { lunarToSolar, solarToLunar } from './lunar';
 import type { CalEvent, Occurrence } from './types';
 
 export const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -53,6 +54,19 @@ export function expand(events: CalEvent[], from: Date, to: Date): Occurrence[] {
       if (s < to && e >= from) out.push({ event: ev, start: s, end: e });
       continue;
     }
+    if (ev.lunar && ev.repeat === 'yearly') {
+      // 음력 반복: 음력 연도마다 같은 음력 월/일의 양력 날짜를 계산
+      const first = solarToLunar(s)?.year ?? s.getFullYear();
+      for (let ly = Math.max(first, from.getFullYear() - 1); ly <= to.getFullYear() + 1; ly++) {
+        const d = lunarToSolar(ly, ev.lunar);
+        if (!d) continue;
+        const os = new Date(d.getFullYear(), d.getMonth(), d.getDate(), s.getHours(), s.getMinutes());
+        if (os < s || os >= to) continue;
+        const oe = new Date(os.getTime() + dur);
+        if (oe >= from) out.push({ event: ev, start: os, end: oe });
+      }
+      continue;
+    }
     for (let n = 0; n < 5000; n++) {
       const os = shift(s, ev.repeat, n);
       if (os >= to) break;
@@ -72,3 +86,18 @@ export function onDay(occ: Occurrence[], day: Date): Occurrence[] {
 
 export const fmtTime = (d: Date) =>
   `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+/** 음력 반복 일정의 앞으로 N년치 양력 시작일 (구글/ICS 내보내기용) */
+export function lunarYearlyStarts(ev: CalEvent, years = 20): Date[] {
+  if (!ev.lunar || ev.repeat !== 'yearly') return [];
+  const s = new Date(ev.start);
+  const first = solarToLunar(s)?.year ?? s.getFullYear();
+  const out: Date[] = [];
+  for (let ly = first; ly < first + years; ly++) {
+    const d = lunarToSolar(ly, ev.lunar);
+    if (!d) continue;
+    const os = new Date(d.getFullYear(), d.getMonth(), d.getDate(), s.getHours(), s.getMinutes());
+    if (os > s) out.push(os); // 첫 발생(=DTSTART)은 제외
+  }
+  return out;
+}

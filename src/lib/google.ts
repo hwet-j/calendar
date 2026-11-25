@@ -114,6 +114,8 @@ export async function pullEvents(token: string, profileId: string, newId: () => 
       const ev = fromGoogle(g, prev?.profileId ?? profileId, prev?.id ?? newId());
       // 음력 반복은 구글에서 RDATE로만 오므로, 앱에 있던 음력 설정을 유지
       if (ev && prev?.lunar) { ev.lunar = prev.lunar; ev.repeat = prev.repeat; }
+      // 일정 색상은 구글과 동기화하지 않고 앱에만 보관
+      if (ev && prev?.color) ev.color = prev.color;
       if (ev) out.push(ev);
     }
     pageToken = data.nextPageToken;

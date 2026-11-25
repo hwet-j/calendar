@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Pill, Row, Section } from '../../components/ui';
+import { ColorPicker } from '../../components/ColorPicker';
 import { Theme, useTheme } from '../../components/theme';
 import * as G from '../../lib/google';
 import { shareEvents } from '../../lib/share';
@@ -135,6 +136,10 @@ function EventForm() {
           <View style={s.wrap}>
             {state.profiles.map((p) => <Pill key={p.id} text={p.name} color={p.color} on={ev.profileId === p.id} onPress={() => set({ profileId: p.id })} />)}
           </View>
+        </Section>
+
+        <Section title="색상">
+          <ColorPicker value={ev.color} profileColor={state.profiles.find((p) => p.id === ev.profileId)?.color} onChange={(color) => set({ color })} />
         </Section>
 
         <Section>

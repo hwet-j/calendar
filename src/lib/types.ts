@@ -21,6 +21,8 @@ export interface CalEvent {
   allDay: boolean;
   location?: string;
   notes?: string;
+  /** 일정 개별 색상(hex). 없으면 프로필 색을 사용 */
+  color?: string;
   repeat: Repeat;
   /** 시작 몇 분 전에 알림 (undefined = 알림 없음) */
   reminderMinutes?: number;

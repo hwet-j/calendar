@@ -209,3 +209,60 @@ test('동기화 병합: 구글에 못 올린 로컬 수정(pendingSync)은 구�
   expect(byTitle).toEqual(['구글 최신', '구글에서 새로 온 일정', '구글에 없는 일정', '내가 고친 제목'].sort());
   expect(out.find((e) => e.googleId === 'g1')!.pendingSync).toBe(true);
 });
+
+import { hiddenPerDay, layoutWeek, textColorOn } from '../src/lib/layout';
+import { eventColor } from '../src/lib/filter';
+
+const occOf = (e: CalEvent) => ({ event: e, start: new Date(e.start), end: new Date(e.end) });
+const D = (m: number, d: number, h = 0, mi = 0) => new Date(2026, m - 1, d, h, mi).toISOString();
+const SUN = new Date(2026, 10, 22); // 2026-11-22 일요일 (주: 22~28)
+const SUN2 = new Date(2026, 10, 29);
+
+test('여러 날 일정은 주 경계를 넘어 이어지는 막대로 나뉨 (fromPrev/toNext)', () => {
+  const trip = ev({ id: 't', allDay: true, start: D(11, 25), end: D(11, 30) }); // 수 ~ 월(다음 주)
+  const w1 = layoutWeek([occOf(trip)], SUN);
+  expect(w1).toHaveLength(1);
+  expect(w1[0]).toMatchObject({ startCol: 3, endCol: 6, fromPrev: false, toNext: true, lane: 0 });
+  const w2 = layoutWeek([occOf(trip)], SUN2);
+  expect(w2[0]).toMatchObject({ startCol: 0, endCol: 1, fromPrev: true, toNext: false });
+  // 일정과 무관한 주에는 나오지 않음
+  expect(layoutWeek([occOf(trip)], new Date(2026, 11, 6))).toHaveLength(0);
+});
+
+test('겹치는 일정은 다른 줄로, 겹치지 않으면 같은 줄 재사용, 긴 일정이 위', () => {
+  const long = ev({ id: 'a', allDay: true, start: D(11, 23), end: D(11, 26), title: '긴 일정' });
+  const short = ev({ id: 'b', allDay: true, start: D(11, 24), end: D(11, 24), title: '짧은 일정' });
+  const later = ev({ id: 'c', allDay: true, start: D(11, 27), end: D(11, 27), title: '뒤 일정' });
+  const segs = layoutWeek([occOf(short), occOf(later), occOf(long)], SUN);
+  const lane = (id: string) => segs.find((s) => s.occ.event.id === id)!.lane;
+  expect(lane('a')).toBe(0);
+  expect(lane('b')).toBe(1);
+  expect(lane('c')).toBe(0); // 긴 일정이 끝난 뒤라 0번 줄 재사용
+});
+
+test('시간 일정: 자정 00:00 정각에 끝나면 그 전날까지, 자정을 넘기면 다음 날까지 이어짐', () => {
+  const endsMidnight = ev({ id: 'm', start: D(11, 24, 20), end: D(11, 25, 0) });
+  expect(layoutWeek([occOf(endsMidnight)], SUN)[0]).toMatchObject({ startCol: 2, endCol: 2 });
+  const overnight = ev({ id: 'n', start: D(11, 24, 22), end: D(11, 25, 2) });
+  expect(layoutWeek([occOf(overnight)], SUN)[0]).toMatchObject({ startCol: 2, endCol: 3 });
+});
+
+test('줄 수 초과 시 칸별로 가려진 개수 계산', () => {
+  const list = [1, 2, 3, 4].map((i) => ev({ id: `x${i}`, allDay: true, start: D(11, 24), end: D(11, 24), title: `일정${i}` }));
+  const segs = layoutWeek(list.map(occOf), SUN);
+  expect(segs.map((s) => s.lane).sort()).toEqual([0, 1, 2, 3]);
+  expect(hiddenPerDay(segs, 3)).toEqual([0, 0, 1, 0, 0, 0, 0]);
+});
+
+test('일정 색상은 프로필 색보다 우선, 글자색은 배경 밝기에 따라 전환', () => {
+  expect(eventColor(ev({ color: '#E5484D' }), profiles)).toBe('#E5484D');
+  expect(eventColor(ev({ color: undefined, profileId: 'b' }), profiles)).toBe('#222222');
+  expect(textColorOn('#F9A825')).toBe('#14161F'); // 노랑 → 어두운 글자
+  expect(textColorOn('#4F7CFF')).toBe('#FFFFFF');
+  expect(textColorOn('#16A085')).toBe('#FFFFFF');
+});
+
+test('일정 색상은 ICS 왕복에서 유지', () => {
+  const [back] = fromICS(toICS([ev({ color: '#8E44AD' })]), 'a', () => 'n');
+  expect(back.color).toBe('#8E44AD');
+});

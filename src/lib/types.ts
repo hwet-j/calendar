@@ -26,6 +26,8 @@ export interface CalEvent {
   repeat: Repeat;
   /** 시작 몇 분 전에 알림 (undefined = 알림 없음) */
   reminderMinutes?: number;
+  /** 구글 캘린더의 '기본 알림'을 따름 (구글에서 가져온 일정이 기본 알림을 쓰는 경우). 앱에서 알림을 직접 고르면 false */
+  remindersDefault?: boolean;
   /** 공유 대상 이메일 (구글 캘린더 초대 / 공유 시 사용) */
   attendees: string[];
   /** 설정되면 음력 기준 일정. repeat='yearly'면 매년 같은 음력 날짜에 반복 (예: 음력 생일) */

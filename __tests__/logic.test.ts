@@ -149,54 +149,71 @@ test('OAuth 리디렉션 주소만 라우터에서 제외, 일반 딥링크는 �
 
 import { mergePulled } from '../src/lib/google';
 
-// 구글 PATCH 의미론 흉내: 객체는 필드 단위 병합, null은 필드 삭제, 배열/원시값은 교체
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function applyPatch(target: any, patch: any): any {
-  const out = { ...target };
-  for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined) continue;
-    if (v === null) delete out[k];
-    else if (typeof v === 'object' && !Array.isArray(v) && typeof out[k] === 'object' && out[k] && !Array.isArray(out[k])) out[k] = applyPatch(out[k], v);
-    else out[k] = v;
-  }
-  return out;
-}
+import { buildUpdateBody, checkPushed } from '../src/lib/google';
 
-test('시간 일정 → 종일 수정: start/end에 date와 dateTime이 함께 남지 않음 ("Invalid start time" 회귀)', () => {
+// 구글에 이미 있는 이벤트(앱이 모르는 필드 포함)
+const onGoogle = (e: CalEvent) => ({
+  ...JSON.parse(JSON.stringify(toGoogle(e))), id: 'gid', etag: '"x"', colorId: '5',
+  conferenceData: { entryPoints: [{ uri: 'https://meet.google.com/abc' }] },
+});
+
+test('시간 일정 → 종일 수정: PUT 본문에 date만 있고 dateTime은 없음, 앱이 모르는 필드는 보존', () => {
   const timed = ev({ start: new Date(2026, 10, 25, 12).toISOString(), end: new Date(2026, 10, 25, 13).toISOString() });
-  const onGoogle = JSON.parse(JSON.stringify(toGoogle(timed))); // 구글에 이미 있는 시간 일정
-  const allDay = { ...timed, allDay: true };
-
-  // 옛 방식(null 없이 date만 전송)은 병합 결과가 잘못됨 → 버그 재현
-  const oldBody = { ...toGoogle(allDay, false), start: { date: '2026-11-25' }, end: { date: '2026-11-26' } };
-  expect(Object.keys(applyPatch(onGoogle, JSON.parse(JSON.stringify(oldBody))).start).sort()).toEqual(['date', 'dateTime']);
-
-  // 새 방식
-  const merged = applyPatch(onGoogle, JSON.parse(JSON.stringify(toGoogle(allDay, true))));
-  expect(merged.start).toEqual({ date: '2026-11-25' });
-  expect(merged.end).toEqual({ date: '2026-11-26' });
+  const body = buildUpdateBody(onGoogle(timed), { ...timed, allDay: true });
+  expect(body.start).toEqual({ date: '2026-11-25' });
+  expect(body.end).toEqual({ date: '2026-11-26' });
+  expect(body.colorId).toBe('5');
+  expect(body.conferenceData).toBeDefined();
 });
 
-test('종일 → 시간 일정 수정도 date가 남지 않음', () => {
+test('종일 → 시간 일정 수정도 dateTime만 남음', () => {
   const day = ev({ allDay: true, start: new Date(2026, 10, 25).toISOString(), end: new Date(2026, 10, 25).toISOString() });
-  const onGoogle = JSON.parse(JSON.stringify(toGoogle(day)));
   const timed = { ...day, allDay: false, start: new Date(2026, 10, 25, 9).toISOString(), end: new Date(2026, 10, 25, 10).toISOString() };
-  const merged = applyPatch(onGoogle, JSON.parse(JSON.stringify(toGoogle(timed, true))));
-  expect(Object.keys(merged.start)).toEqual(['dateTime']);
-  expect(Object.keys(merged.end)).toEqual(['dateTime']);
+  const body = buildUpdateBody(onGoogle(day), timed);
+  expect(Object.keys(body.start)).toEqual(['dateTime']);
+  expect(Object.keys(body.end)).toEqual(['dateTime']);
 });
 
-test('수정 시 비운 장소·메모·반복·참석자는 구글에서도 지워짐, 신규 생성 본문에는 null이 없음', () => {
-  const full = ev({ location: '강남', notes: '메모', repeat: 'weekly', attendees: ['a@b.co'], reminderMinutes: 10 });
-  const onGoogle = JSON.parse(JSON.stringify(toGoogle(full)));
-  const cleared = { ...full, location: '', notes: '', repeat: 'none' as const, attendees: [], reminderMinutes: undefined };
-  const merged = applyPatch(onGoogle, JSON.parse(JSON.stringify(toGoogle(cleared, true))));
-  expect(merged.location).toBeUndefined();
-  expect(merged.description).toBeUndefined();
-  expect(merged.recurrence).toBeUndefined();
-  expect(merged.attendees).toBeUndefined();
-  expect(merged.reminders).toEqual({ useDefault: true });
-  expect(JSON.stringify(toGoogle(cleared, false))).not.toContain('null');
+test('알림 "없음"은 구글에 useDefault:false 로 전달 (기본 알림 30분이 붙지 않음) — 생성/수정 모두', () => {
+  const withReminder = ev({ reminderMinutes: 10 });
+  const none = { ...withReminder, reminderMinutes: undefined };
+  expect(toGoogle(none).reminders).toEqual({ useDefault: false });          // 생성
+  const body = buildUpdateBody(onGoogle(withReminder), none);               // 수정: 이전 overrides가 남지 않음
+  expect(body.reminders).toEqual({ useDefault: false });
+  expect(toGoogle(withReminder).reminders).toEqual({ useDefault: false, overrides: [{ method: 'popup', minutes: 10 }] });
+});
+
+test('구글에서 가져온 기본 알림 일정은 수정해도 기본 알림을 유지, 앱에서 직접 "없음"을 고르면 해제', () => {
+  const fromG = fromGoogle({ id: 'g', summary: 't', start: { dateTime: new Date(2026, 10, 25, 9).toISOString() }, end: { dateTime: new Date(2026, 10, 25, 10).toISOString() }, reminders: { useDefault: true } }, 'a', 'x')!;
+  expect(fromG).toMatchObject({ reminderMinutes: undefined, remindersDefault: true });
+  expect(toGoogle(fromG).reminders).toEqual({ useDefault: true });
+  expect(toGoogle({ ...fromG, remindersDefault: false }).reminders).toEqual({ useDefault: false });
+});
+
+test('동기화로 알림이 되살아나지 않음: useDefault:true + 남아 있던 overrides는 알림 없음으로 취급', () => {
+  const stale = { id: 'g', summary: 't', start: { dateTime: new Date(2026, 10, 25, 9).toISOString() }, end: { dateTime: new Date(2026, 10, 25, 10).toISOString() },
+    reminders: { useDefault: true, overrides: [{ method: 'popup', minutes: 30 }] } };
+  expect(fromGoogle(stale, 'a', 'x')!.reminderMinutes).toBeUndefined();
+  const real = { ...stale, reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] } };
+  expect(fromGoogle(real, 'a', 'x')!.reminderMinutes).toBe(30);
+});
+
+test('수정 시 비운 장소·메모·반복·참석자는 구글에서도 지워지고, 기존 참석자의 응답 상태는 유지', () => {
+  const full = ev({ location: '강남', notes: '메모', repeat: 'weekly', attendees: ['a@b.co', 'c@d.co'], reminderMinutes: 10 });
+  const g = { ...onGoogle(full), attendees: [{ email: 'a@b.co', responseStatus: 'accepted' }, { email: 'c@d.co', responseStatus: 'declined' }] };
+  const kept = buildUpdateBody(g, { ...full, attendees: ['a@b.co'] });
+  expect(kept.attendees).toEqual([{ email: 'a@b.co', responseStatus: 'accepted' }]);
+  const cleared = buildUpdateBody(g, { ...full, location: '', notes: '', repeat: 'none', attendees: [] });
+  for (const k of ['location', 'description', 'recurrence', 'attendees']) expect(k in JSON.parse(JSON.stringify(cleared))).toBe(false);
+});
+
+test('구글 응답 점검: 종일/알림이 제대로 반영되지 않았으면 문제로 보고', () => {
+  const day = ev({ allDay: true, reminderMinutes: undefined, start: new Date(2026, 10, 25).toISOString(), end: new Date(2026, 10, 25).toISOString() });
+  const good = { summary: day.title, start: { date: '2026-11-25' }, end: { date: '2026-11-26' }, reminders: { useDefault: false } };
+  expect(checkPushed(day, good)).toEqual([]);
+  expect(checkPushed(day, { ...good, start: { date: '2026-11-25', dateTime: '2026-11-25T03:00:00Z' } })).toContain('종일 일정으로 반영되지 않았어요');
+  expect(checkPushed(day, { ...good, reminders: { useDefault: true } })).toContain('알림 "없음"이 구글에 반영되지 않았어요');
+  expect(checkPushed({ ...day, reminderMinutes: 10 }, { ...good, reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 30 }] } }).length).toBe(1);
 });
 
 test('동기화 병합: 구글에 못 올린 로컬 수정(pendingSync)은 구글의 옛 버전으로 덮어쓰지 않음', () => {

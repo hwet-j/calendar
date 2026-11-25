@@ -43,28 +43,63 @@ function recurrenceOf(e: CalEvent): string[] | undefined {
   return RRULE[e.repeat];
 }
 
-/**
- * 앱 일정 → 구글 이벤트 본문.
- * patch=true(수정)일 때는 비운 값/바뀐 형식을 구글에 남기지 않도록 null로 명시한다.
- * (PATCH는 필드를 병합하므로, 시간 일정 → 종일로 바꿀 때 `dateTime: null`을 안 보내면
- *  start에 date와 dateTime이 함께 남아 "Invalid start time" 400 오류가 난다)
- */
-export function toGoogle(e: CalEvent, patch = false) {
+/** 알림 3상태: 앱에서 고른 알림 / 구글 기본 알림 따름(구글에서 가져온 일정) / 없음 */
+function remindersOf(e: CalEvent) {
+  if (e.reminderMinutes !== undefined) return { useDefault: false, overrides: [{ method: 'popup', minutes: e.reminderMinutes }] };
+  if (e.remindersDefault) return { useDefault: true };
+  // "없음"은 반드시 useDefault:false 로 보내야 한다. (생략하거나 true면 구글이 캘린더 기본 알림(보통 30분)을 붙인다)
+  return { useDefault: false };
+}
+
+/** 앱 일정 → 구글 이벤트 본문 (값이 없는 항목은 키 자체를 생략: PUT으로 보내면 구글에서도 지워진다) */
+export function toGoogle(e: CalEvent) {
   const s = new Date(e.start), en = new Date(e.end);
-  const n = patch ? null : undefined;
-  const rec = recurrenceOf(e);
   return {
     summary: e.title,
-    location: e.location || n,
-    description: e.notes || n,
-    start: e.allDay ? { date: dOnly(s), dateTime: n } : { dateTime: s.toISOString(), date: n },
-    end: e.allDay ? { date: dOnly(new Date(en.getTime() + 86400000)), dateTime: n } : { dateTime: en.toISOString(), date: n },
-    recurrence: rec ?? n,
-    attendees: e.attendees.length ? e.attendees.map((email) => ({ email })) : n,
-    reminders: e.reminderMinutes !== undefined
-      ? { useDefault: false, overrides: [{ method: 'popup', minutes: e.reminderMinutes }] }
-      : (patch ? { useDefault: true, overrides: null } : undefined),
+    location: e.location || undefined,
+    description: e.notes || undefined,
+    start: e.allDay ? { date: dOnly(s) } : { dateTime: s.toISOString() },
+    end: e.allDay ? { date: dOnly(new Date(en.getTime() + 86400000)) } : { dateTime: en.toISOString() },
+    recurrence: recurrenceOf(e),
+    attendees: e.attendees.length ? e.attendees.map((email) => ({ email })) : undefined,
+    reminders: remindersOf(e),
   };
+}
+
+const MANAGED = ['summary', 'location', 'description', 'start', 'end', 'recurrence', 'attendees', 'reminders'] as const;
+
+/**
+ * 수정용 본문: 구글에 있는 현재 이벤트를 기준으로 앱이 관리하는 항목만 통째로 교체한다.
+ * (PATCH는 중첩 객체를 병합해서 start/reminders에 이전 값이 남는 문제가 있어 GET 후 PUT 방식을 쓴다.
+ *  화상회의 링크·색상 같은 앱이 모르는 항목은 그대로 보존되고, 기존 참석자의 응답 상태도 유지된다)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function buildUpdateBody(existing: any, e: CalEvent) {
+  const base = { ...existing };
+  for (const k of MANAGED) delete base[k];
+  const body = { ...base, ...toGoogle(e) };
+  if (body.attendees) {
+    const prev: { email: string }[] = existing?.attendees ?? [];
+    body.attendees = body.attendees.map((a: { email: string }) => prev.find((p) => p.email?.toLowerCase() === a.email.toLowerCase()) ?? a);
+  }
+  return body;
+}
+
+/** 구글이 돌려준 이벤트가 우리가 보낸 내용과 같은지 점검. 다르면 사람이 읽을 수 있는 문제 목록 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function checkPushed(e: CalEvent, r: any): string[] {
+  const out: string[] = [];
+  if (e.allDay) { if (!r?.start?.date || r?.start?.dateTime) out.push('종일 일정으로 반영되지 않았어요'); }
+  else if (!r?.start?.dateTime || r?.start?.date) out.push('시간 일정으로 반영되지 않았어요');
+  if (r?.summary !== e.title) out.push('제목이 다르게 반영됐어요');
+  const rem = r?.reminders;
+  const popup = rem?.overrides?.find((o: { method: string }) => o.method === 'popup');
+  if (e.reminderMinutes !== undefined) {
+    if (rem?.useDefault || popup?.minutes !== e.reminderMinutes) out.push(`알림이 ${e.reminderMinutes}분 전으로 반영되지 않았어요`);
+  } else if (e.remindersDefault) {
+    if (!rem?.useDefault) out.push('구글 기본 알림 설정이 반영되지 않았어요');
+  } else if (rem?.useDefault || rem?.overrides?.length) out.push('알림 "없음"이 구글에 반영되지 않았어요');
+  return out;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,13 +110,16 @@ export function fromGoogle(g: any, profileId: string, id: string): CalEvent | nu
   let en = allDay ? new Date(g.end.date + 'T00:00:00') : new Date(g.end.dateTime);
   if (allDay) en = new Date(en.getTime() - 86400000);
   const f = /FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)/.exec((g.recurrence ?? []).join(';'))?.[1];
-  const popup = g.reminders?.overrides?.find((o: { method: string }) => o.method === 'popup');
+  // useDefault:true 이면 overrides가 남아 있어도 구글은 무시하므로 앱에서도 알림 없음 + 기본 알림 따름으로 취급
+  const useDefault = !!g.reminders?.useDefault;
+  const popup = useDefault ? undefined : g.reminders?.overrides?.find((o: { method: string }) => o.method === 'popup');
   return {
     id, googleId: g.id, profileId, title: g.summary ?? '(제목 없음)',
     start: s.toISOString(), end: en.toISOString(), allDay,
     location: g.location, notes: g.description,
     repeat: (f ? f.toLowerCase() : 'none') as Repeat,
     reminderMinutes: popup?.minutes,
+    remindersDefault: useDefault || undefined,
     attendees: (g.attendees ?? []).map((a: { email: string }) => a.email),
     updatedAt: g.updated ?? new Date().toISOString(),
   };
@@ -123,15 +161,23 @@ export async function pullEvents(token: string, profileId: string, newId: () => 
   return out;
 }
 
-/** 앱 → 구글 (생성 또는 수정). 참석자가 있으면 구글이 초대 메일을 발송 = 일정 공유 */
-export async function pushEvent(token: string, e: CalEvent): Promise<string> {
+/** 앱 → 구글 (생성 또는 수정). 참석자가 있으면 구글이 초대 메일을 발송 = 일정 공유. 구글이 돌려준 결과를 점검해 문제 목록도 반환 */
+export async function pushEvent(token: string, e: CalEvent): Promise<{ id: string; problems: string[] }> {
   const qs = '?sendUpdates=all';
-  if (e.googleId) {
-    const r = await call(token, `${BASE}/${e.googleId}${qs}`, { method: 'PATCH', body: JSON.stringify(toGoogle(e, true)) });
-    return r.id;
+  const create = async () => {
+    const r = await call(token, `${BASE}${qs}`, { method: 'POST', body: JSON.stringify(toGoogle(e)) });
+    return { id: r.id as string, problems: checkPushed(e, r) };
+  };
+  if (!e.googleId) return create();
+  let existing;
+  try { existing = await call(token, `${BASE}/${e.googleId}`); }
+  catch (err) {
+    // 구글에서 이미 삭제된 일정이면 새로 만든다
+    if (/Google API (404|410)/.test(String(err))) return create();
+    throw err;
   }
-  const r = await call(token, `${BASE}${qs}`, { method: 'POST', body: JSON.stringify(toGoogle(e)) });
-  return r.id;
+  const r = await call(token, `${BASE}/${e.googleId}${qs}`, { method: 'PUT', body: JSON.stringify(buildUpdateBody(existing, e)) });
+  return { id: r.id as string, problems: checkPushed(e, r) };
 }
 
 export const removeEvent = (token: string, googleId: string) =>

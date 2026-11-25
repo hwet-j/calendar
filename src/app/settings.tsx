@@ -57,16 +57,20 @@ export default function Settings() {
       // 1) 구글에 없거나(신규) 구글에 반영 못 한(수정) 로컬 일정을 먼저 올리고  2) 구글 일정을 가져와 병합
       const local = [...state.events];
       let failed = 0;
+      const problems: string[] = [];
       for (let i = 0; i < local.length; i++) {
         if (local[i].googleId && !local[i].pendingSync) continue;
-        try { local[i] = { ...local[i], googleId: await G.pushEvent(token, local[i]), pendingSync: false }; }
-        catch { failed++; local[i] = { ...local[i], pendingSync: true }; }
+        try {
+          const r = await G.pushEvent(token, local[i]);
+          local[i] = { ...local[i], googleId: r.id, pendingSync: r.problems.length > 0 };
+          if (r.problems.length) { failed++; problems.push(`${local[i].title}: ${r.problems.join(', ')}`); }
+        } catch { failed++; local[i] = { ...local[i], pendingSync: true }; }
       }
       const profileId = state.activeProfileId ?? state.profiles[0].id;
       const pulled = await G.pullEvents(token, profileId, uid, local);
       replaceEvents(G.mergePulled(local, pulled));
       setGoogle({ ...state.google, connected: true, lastSync: new Date().toISOString() });
-      Alert.alert(failed ? '일부만 동기화됐어요' : '동기화 완료', failed ? `구글에 올리지 못한 일정이 ${failed}개 있어요. 기기에는 그대로 남아 있고 다음 동기화 때 다시 시도해요.` : `구글 일정 ${pulled.length}개를 반영했어요.`);
+      Alert.alert(failed ? '일부만 동기화됐어요' : '동기화 완료', failed ? `구글에 완전히 반영하지 못한 일정이 ${failed}개 있어요. 기기에는 그대로 남아 있고 다음 동기화 때 다시 시도해요.${problems.length ? '\n\n' + problems.slice(0, 3).join('\n') : ''}` : `구글 일정 ${pulled.length}개를 반영했어요.`);
     } catch (e) { Alert.alert('동기화 실패', String(e)); } finally { setBusy(false); }
   };
 

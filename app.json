@@ -8,7 +8,10 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": { "supportsTablet": true, "bundleIdentifier": "com.hwetj.calendar" },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hwetj.calendar"
+    },
     "android": {
       "package": "com.hwetj.calendar",
       "adaptiveIcon": {
@@ -22,19 +25,24 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      ["expo-notifications", { "color": "#4F7CFF" }],
+      [
+        "expo-notifications",
+        {
+          "color": "#4F7CFF"
+        }
+      ],
       [
         "react-native-android-widget",
         {
           "widgets": [
             {
               "name": "AgendaWidget",
-              "label": "오늘의 일정",
-              "description": "선택한 프로필(또는 전체)의 오늘·내일 일정을 보여줘요",
-              "minWidth": "180dp",
-              "minHeight": "110dp",
+              "label": "캘린더",
+              "description": "앱과 같은 월간 달력으로 보거나, 오늘 일정으로 바꿔가며 볼 수 있어요",
+              "minWidth": "250dp",
+              "minHeight": "180dp",
               "targetCellWidth": 4,
-              "targetCellHeight": 2,
+              "targetCellHeight": 3,
               "resizeMode": "horizontal|vertical",
               "updatePeriodMillis": 1800000
             }

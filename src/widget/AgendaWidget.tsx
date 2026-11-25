@@ -4,12 +4,7 @@ import { addDays, expand, fmtTime, sameDay, startOfDay } from '../lib/dates';
 import { visibleEvents } from '../lib/filter';
 import type { AppState, Occurrence } from '../lib/types';
 
-type Hex = `#${string}`;
-type Pal = Record<'bg' | 'item' | 'text' | 'sub' | 'primary' | 'soft', Hex>;
-const PALETTE: Record<'light' | 'dark', Pal> = {
-  light: { bg: '#FFFFFF', item: '#F4F5F9', text: '#14161F', sub: '#6B7080', primary: '#4F6BFF', soft: '#EAEEFF' },
-  dark: { bg: '#1A1C25', item: '#262936', text: '#F2F3F7', sub: '#9A9FB1', primary: '#7C92FF', soft: '#2B3158' },
-};
+import { PALETTE, type Hex, type Pal } from './palette';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
 const ROW_H = 46; // 일정 카드 1개 높이(dp, 여백 포함)
@@ -40,6 +35,12 @@ export function AgendaWidget({ state, now = new Date(), heightDp, mode = 'light'
         <FlexWidget style={{ flex: 1, flexDirection: 'column', marginRight: 8 }}>
           <TextWidget text={`${DOW[now.getDay()]}요일`} style={{ fontSize: 14, fontWeight: 'bold', color: c.text }} />
           <TextWidget text={`${now.getMonth() + 1}월 · ${scope}`} style={{ fontSize: 12, color: c.sub }} maxLines={1} truncate="END" />
+        </FlexWidget>
+        <FlexWidget
+          clickAction="TOGGLE_MODE" accessibilityLabel="달력 보기로 전환"
+          style={{ height: 22, paddingHorizontal: 9, borderRadius: 11, backgroundColor: c.soft, alignItems: 'center', justifyContent: 'center', marginRight: 6 }}
+        >
+          <TextWidget text="달력" style={{ fontSize: 11, fontWeight: 'bold', color: c.primary }} />
         </FlexWidget>
         <FlexWidget
           clickAction="OPEN_URI"

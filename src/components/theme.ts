@@ -23,3 +23,9 @@ export function useTheme(): Theme {
 }
 
 export const R = { sm: 10, md: 14, lg: 20, pill: 999 };
+
+/** 일정 색상 선택지 (흰 글자가 잘 읽히는 중간 톤 위주, 노랑은 어두운 글자로 자동 전환) */
+export const EVENT_COLORS = [
+  '#4F7CFF', '#2E86C1', '#00ACC1', '#16A085', '#43A047', '#F9A825',
+  '#E67E22', '#E5484D', '#D81B60', '#8E44AD', '#6D4C41', '#546E7A',
+] as const;

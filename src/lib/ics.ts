@@ -20,6 +20,7 @@ export function toICS(events: CalEvent[]): string {
       lines.push(`DTSTART;VALUE=DATE:${dateOnly(s)}`, `DTEND;VALUE=DATE:${dateOnly(new Date(en.getTime() + 86400000))}`);
     } else lines.push(`DTSTART:${utc(s)}`, `DTEND:${utc(en)}`);
     lines.push(`SUMMARY:${esc(e.title)}`);
+    if (e.color) lines.push(`X-COLOR:${e.color}`);
     if (e.location) lines.push(`LOCATION:${esc(e.location)}`);
     if (e.notes) lines.push(`DESCRIPTION:${esc(e.notes)}`);
     if (e.lunar && e.repeat === 'yearly') {
@@ -69,6 +70,7 @@ export function fromICS(text: string, profileId: string, newId: () => string): C
           location: cur.LOCATION ? unesc(cur.LOCATION) : undefined,
           notes: cur.DESCRIPTION ? unesc(cur.DESCRIPTION) : undefined,
           repeat: (lm ? 'yearly' : f ? f.toLowerCase() : 'none') as Repeat, reminderMinutes: alarm,
+          color: /^#[0-9a-f]{6}$/i.test(cur['X-COLOR'] ?? '') ? cur['X-COLOR'] : undefined,
           lunar: lm ? { month: +lm[1], day: +lm[2], leap: lm[3] === '1' } : undefined,
           attendees: [], updatedAt: new Date().toISOString(),
         });

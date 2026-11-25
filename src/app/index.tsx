@@ -5,9 +5,12 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { R, Theme, useTheme } from '../components/theme';
+import { JumpSheet } from '../components/JumpSheet';
+import { LANE_H, MORE_H, NUM_H, WeekRow } from '../components/WeekRow';
+import { lastDay, layoutWeek } from '../lib/layout';
 import { chunkWeeks, dayKey, expand, fmtTime, monthGrid, onDay, sameDay } from '../lib/dates';
-import { profileOf } from '../lib/filter';
-import { fmtLunar, lunarCell, solarToLunar } from '../lib/lunar';
+import { eventColor, profileOf } from '../lib/filter';
+import { fmtLunar, solarToLunar } from '../lib/lunar';
 import { useStore } from '../lib/store';
 
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
@@ -21,6 +24,7 @@ export default function Home() {
   const now = new Date();
   const [cursor, setCursor] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
   const [sel, setSel] = useState(now);
+  const [jumpOpen, setJumpOpen] = useState(false);
 
   const grid = useMemo(() => monthGrid(cursor.getFullYear(), cursor.getMonth()), [cursor]);
   const lunarOf = useMemo(() => {
@@ -29,7 +33,11 @@ export default function Home() {
     return m;
   }, [grid]);
   const weeks = useMemo(() => chunkWeeks(grid), [grid]);
+  // 주마다 막대 3줄 + "+N" 줄. 화면이 작아도 달력과 일정 목록이 함께 스크롤되므로 높이는 고정
+  const maxLanes = 3;
+  const weekH = NUM_H + maxLanes * LANE_H + MORE_H;
   const occ = useMemo(() => expand(shown, grid[0], new Date(grid[41].getTime() + 86400000)), [shown, grid]);
+  const weekSegs = useMemo(() => weeks.map((w) => layoutWeek(occ, w[0])), [weeks, occ]);
   const byDay = useMemo(() => {
     const m = new Map<string, typeof occ>();
     for (const d of grid) m.set(dayKey(d), onDay(occ, d));
@@ -39,6 +47,7 @@ export default function Home() {
 
   const selLunar = solarToLunar(sel);
   const move = (n: number) => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + n, 1));
+  const jumpTo = (d: Date) => { setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); setSel(d); };
   const goToday = () => { setCursor(new Date(now.getFullYear(), now.getMonth(), 1)); setSel(now); };
   const tap = () => Haptics.selectionAsync().catch(() => {});
   const isThisMonth = cursor.getFullYear() === now.getFullYear() && cursor.getMonth() === now.getMonth();
@@ -46,10 +55,13 @@ export default function Home() {
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
-        <View>
+        <Pressable onPress={() => setJumpOpen(true)} accessibilityRole="button" accessibilityLabel={`${cursor.getFullYear()}년 ${cursor.getMonth() + 1}월, 눌러서 연월 선택 또는 검색`}>
           <Text style={s.year}>{cursor.getFullYear()}</Text>
-          <Text style={s.month}>{cursor.getMonth() + 1}월</Text>
-        </View>
+          <View style={s.monthRow}>
+            <Text style={s.month}>{cursor.getMonth() + 1}월</Text>
+            <Ionicons name="chevron-down" size={20} color={t.sub} style={{ marginTop: 10 }} />
+          </View>
+        </Pressable>
         <View style={s.headerRight}>
           <IconBtn s={s} t={t} name="chevron-back" onPress={() => move(-1)} label="이전 달" />
           <IconBtn s={s} t={t} name="chevron-forward" onPress={() => move(1)} label="다음 달" />
@@ -74,45 +86,18 @@ export default function Home() {
         </Pressable>
       </ScrollView>
 
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}>
       <View style={s.calendar}>
         <View style={s.row}>
           {DOW.map((d, i) => (
             <Text key={d} style={[s.dow, i === 0 && { color: t.sun }, i === 6 && { color: t.sat }]}>{d}</Text>
           ))}
         </View>
-        {/* 7칸을 퍼센트 폭+줄바꿈으로 나누면 안드로이드에서 반올림 오차로 6칸만 들어가므로, 주 단위 행 + flex:1 로 배치 */}
+        {/* 주 단위 행 + 막대는 flex 비율로 배치 (퍼센트 폭은 안드로이드에서 반올림 오차로 6칸만 들어감) */}
         {weeks.map((week, wi) => (
-        <View key={wi} style={s.week}>
-          {week.map((d) => {
-            const items = byDay.get(dayKey(d)) ?? [];
-            const out = d.getMonth() !== cursor.getMonth();
-            const isSel = sameDay(d, sel);
-            const isToday = sameDay(d, now);
-            const colors = [...new Set(items.map((o) => profileOf(state.profiles, o.event.profileId).color))].slice(0, 3);
-            return (
-              <Pressable key={d.toISOString()} style={s.cell} onPress={() => { tap(); setSel(d); }}
-                accessibilityLabel={`${d.getMonth() + 1}월 ${d.getDate()}일, 일정 ${items.length}개`}>
-                <View style={[s.num, isSel && { backgroundColor: t.primary }, !isSel && isToday && { backgroundColor: t.primarySoft }]}>
-                  <Text style={[
-                    s.numT,
-                    d.getDay() === 0 && { color: t.sun }, d.getDay() === 6 && { color: t.sat },
-                    out && { color: t.faint },
-                    (isToday && !isSel) && { color: t.primary, fontWeight: '800' },
-                    isSel && { color: '#fff', fontWeight: '800' },
-                  ]}>{d.getDate()}</Text>
-                </View>
-                {showLunar && (
-                  <Text style={[s.lunarT, out && { opacity: 0.4 }]} numberOfLines={1}>
-                    {lunarOf.get(dayKey(d)) ? lunarCell(lunarOf.get(dayKey(d))!) : ''}
-                  </Text>
-                )}
-                <View style={s.dots}>
-                  {colors.map((c) => <View key={c} style={[s.dot, { backgroundColor: c }, out && { opacity: 0.4 }]} />)}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
+          <WeekRow key={wi} week={week} segs={weekSegs[wi]} maxLanes={maxLanes} height={weekH}
+            month={cursor.getMonth()} sel={sel} now={now} showLunar={showLunar} lunarOf={lunarOf}
+            profiles={state.profiles} onSelect={(d) => { tap(); setSel(d); }} />
         ))}
       </View>
 
@@ -121,7 +106,7 @@ export default function Home() {
         {list.length > 0 && <Text style={s.count}>{list.length}개</Text>}
         {selLunar && <Text style={s.lunarHead}>{fmtLunar(selLunar)}</Text>}
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 96, gap: 10 }}>
+      <View style={{ paddingHorizontal: 16, gap: 10 }}>
         {list.length === 0 && (
           <View style={s.empty}>
             <Ionicons name="calendar-clear-outline" size={36} color={t.faint} />
@@ -131,6 +116,7 @@ export default function Home() {
         )}
         {list.map((o, i) => {
           const p = profileOf(state.profiles, o.event.profileId);
+          const color = eventColor(o.event, state.profiles);
           const multi = !sameDay(o.start, o.end);
           return (
             <Pressable key={`${o.event.id}-${i}`} style={s.card} onPress={() => router.push(`/event/${o.event.id}`)}
@@ -145,12 +131,13 @@ export default function Home() {
                   </>
                 )}
               </View>
-              <View style={[s.bar, { backgroundColor: p.color }]} />
+              <View style={[s.bar, { backgroundColor: color }]} />
               <View style={{ flex: 1, gap: 4 }}>
                 <Text style={s.itemT} numberOfLines={1}>{o.event.title}</Text>
                 <View style={s.meta}>
                   <View style={[s.pdot, { backgroundColor: p.color }]} />
                   <Text style={s.metaT}>{p.name}</Text>
+                  {multi && (() => { const ld = lastDay(o); return <Text style={s.metaT}>{o.start.getMonth() + 1}/{o.start.getDate()}–{ld.getMonth() + 1}/{ld.getDate()}</Text>; })()}
                   {!!o.event.location && (<><Ionicons name="location-outline" size={12} color={t.sub} /><Text style={s.metaT} numberOfLines={1}>{o.event.location}</Text></>)}
                   {o.event.lunar && (<><Ionicons name="moon-outline" size={12} color={t.sub} /><Text style={s.metaT}>{fmtLunar(o.event.lunar)}</Text></>)}
                   {o.event.repeat !== 'none' && <Ionicons name="repeat" size={12} color={t.sub} />}
@@ -161,7 +148,10 @@ export default function Home() {
             </Pressable>
           );
         })}
+      </View>
       </ScrollView>
+
+      <JumpSheet visible={jumpOpen} cursor={cursor} events={shown} profiles={state.profiles} onClose={() => setJumpOpen(false)} onJump={jumpTo} />
 
       <Pressable
         style={[s.fab, { bottom: insets.bottom + 20 }]}
@@ -195,6 +185,7 @@ const styles = (t: Theme) => StyleSheet.create({
   root: { flex: 1, backgroundColor: t.bg },
   header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
   year: { fontSize: 13, fontWeight: '600', color: t.sub },
+  monthRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   month: { fontSize: 34, fontWeight: '800', color: t.text, letterSpacing: -0.5, lineHeight: 40 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   iconBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
@@ -210,14 +201,7 @@ const styles = (t: Theme) => StyleSheet.create({
   calendar: { marginHorizontal: 16, backgroundColor: t.card, borderRadius: R.lg, paddingHorizontal: 6, paddingTop: 10, paddingBottom: 6, boxShadow: t.shadow },
   row: { flexDirection: 'row' },
   dow: { flex: 1, textAlign: 'center', color: t.sub, fontSize: 12, fontWeight: '600', paddingBottom: 6 },
-  week: { flexDirection: 'row' },
-  cell: { flex: 1, minHeight: 48, alignItems: 'center', paddingTop: 2 },
-  num: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  numT: { fontSize: 15, color: t.text, fontWeight: '500' },
-  lunarT: { fontSize: 9, color: t.sub, marginTop: 0, height: 11 },
   lunarHead: { fontSize: 12, color: t.sub, marginLeft: 'auto' },
-  dots: { flexDirection: 'row', gap: 3, marginTop: 2, height: 5 },
-  dot: { width: 5, height: 5, borderRadius: 3 },
   agendaHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },
   agendaTitle: { fontSize: 17, fontWeight: '800', color: t.text },
   count: { fontSize: 12, fontWeight: '700', color: t.primary, backgroundColor: t.primarySoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: R.pill, overflow: 'hidden' },

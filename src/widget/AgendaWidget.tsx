@@ -69,7 +69,7 @@ export function AgendaWidget({ state, now = new Date(), heightDp, mode = 'light'
 
 function Item({ o, now, state, c }: { o: Occurrence; now: Date; state: AppState; c: Pal }) {
   const p = state.profiles.find((x) => x.id === o.event.profileId);
-  const color = (p?.color ?? c.primary) as Hex;
+  const color = (o.event.color ?? p?.color ?? c.primary) as Hex;
   const day = sameDay(o.start, now) ? '' : sameDay(o.start, addDays(now, 1)) ? '내일 ' : `${o.start.getMonth() + 1}/${o.start.getDate()} `;
   const when = o.event.allDay ? `${day}종일` : `${day}${fmtTime(o.start)}–${fmtTime(o.end)}`;
   return (

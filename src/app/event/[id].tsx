@@ -4,9 +4,11 @@ import React, { useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Pill, Row, Section } from '../../components/ui';
+import { ColorPicker } from '../../components/ColorPicker';
 import { Theme, useTheme } from '../../components/theme';
 import * as G from '../../lib/google';
 import { shareEvents } from '../../lib/share';
+import { startOfDay } from '../../lib/dates';
 import { fmtLunar, lunarToSolar, solarToLunar } from '../../lib/lunar';
 import { uid, useStore } from '../../lib/store';
 import type { CalEvent, LunarDate, Repeat } from '../../lib/types';
@@ -71,6 +73,16 @@ function EventForm() {
     }
   };
 
+  // 종일 ↔ 시간 전환 시 시각도 함께 정리: 종일은 00:00 기준 날짜로, 시간 일정으로 돌아오면 오전 9시부터 1시간
+  const toggleAllDay = (on: boolean) => {
+    const s0 = new Date(ev.start), e0 = new Date(ev.end);
+    if (on) return set({ allDay: true, start: startOfDay(s0).toISOString(), end: startOfDay(e0 < s0 ? s0 : e0).toISOString() });
+    const st = new Date(s0.getFullYear(), s0.getMonth(), s0.getDate(), 9);
+    const multi = startOfDay(e0) > startOfDay(s0);
+    const en = multi ? new Date(e0.getFullYear(), e0.getMonth(), e0.getDate(), 10) : new Date(st.getTime() + 3600000);
+    set({ allDay: false, start: st.toISOString(), end: en.toISOString() });
+  };
+
   const toggleLunar = (on: boolean) => {
     if (!on) return set({ lunar: undefined, repeat: 'none' });
     const l = solarToLunar(new Date(ev.start));
@@ -96,10 +108,21 @@ function EventForm() {
     setSaving(true);
     const attendees = mails.split(/[,\s]+/).filter((m) => /.+@.+\..+/.test(m));
     let out: CalEvent = { ...ev, title: ev.title.trim(), attendees, updatedAt: new Date().toISOString() };
-    const tok = state.google.connected ? await G.loadToken() : null;
-    if (tok && tok.expiresAt > Date.now()) {
-      try { out = { ...out, googleId: await G.pushEvent(tok.accessToken, out) }; }
-      catch (e) { Alert.alert('구글 동기화 실패', '기기에는 저장됐어요. 설정에서 다시 동기화해 보세요.\n' + String(e)); }
+    if (out.allDay) out = { ...out, start: startOfDay(new Date(out.start)).toISOString(), end: startOfDay(new Date(out.end)).toISOString() };
+    if (state.google.connected) {
+      // 구글에 못 올리면(토큰 만료·네트워크·API 오류) 기기에는 저장하고 pendingSync로 표시 → 다음 동기화 때 다시 올림
+      out = { ...out, pendingSync: true };
+      const token = await G.freshAccessToken();
+      if (token) {
+        try {
+          const r = await G.pushEvent(token, out);
+          out = { ...out, googleId: r.id, pendingSync: r.problems.length > 0 };
+          if (r.problems.length) Alert.alert('구글에 일부만 반영됐어요', r.problems.join('\n') + '\n기기에는 저장됐고, 설정에서 "지금 동기화"로 다시 시도해요.');
+        }
+        catch (e) { Alert.alert('구글 동기화 실패', '기기에는 저장됐어요. 설정에서 "지금 동기화"를 누르면 다시 올려요.\n' + String(e)); }
+      } else {
+        Alert.alert('구글 연결이 만료됐어요', '기기에는 저장됐어요. 설정에서 구글을 다시 연결한 뒤 동기화하면 반영돼요.');
+      }
     }
     saveEvent(out);
     router.back();
@@ -108,8 +131,8 @@ function EventForm() {
   const remove = () => Alert.alert('일정 삭제', '이 일정을 삭제할까요?', [
     { text: '취소', style: 'cancel' },
     { text: '삭제', style: 'destructive', onPress: async () => {
-      const tok = existing?.googleId && state.google.connected ? await G.loadToken() : null;
-      if (tok && existing?.googleId) await G.removeEvent(tok.accessToken, existing.googleId).catch(() => {});
+      const token = existing?.googleId && state.google.connected ? await G.freshAccessToken() : null;
+      if (token && existing?.googleId) await G.removeEvent(token, existing.googleId).catch(() => {});
       deleteEvent(ev.id); router.back();
     } },
   ]);
@@ -131,8 +154,12 @@ function EventForm() {
           </View>
         </Section>
 
+        <Section title="색상">
+          <ColorPicker value={ev.color} profileColor={state.profiles.find((p) => p.id === ev.profileId)?.color} onChange={(color) => set({ color })} />
+        </Section>
+
         <Section>
-          <Row icon="sunny-outline" label="종일" right={<Switch value={ev.allDay} onValueChange={(allDay) => set({ allDay })} trackColor={{ true: t.primary }} />} />
+          <Row icon="sunny-outline" label="종일" right={<Switch value={ev.allDay} onValueChange={toggleAllDay} trackColor={{ true: t.primary }} />} />
           <Row icon="play-outline" label="시작" onPress={() => openPicker('start')} right={<Text style={s.val}>{fmt(ev.start)}</Text>} />
           <Row icon="stop-outline" label="종료" onPress={() => openPicker('end')} right={<Text style={s.val}>{fmt(ev.end)}</Text>} last />
         </Section>
@@ -181,7 +208,7 @@ function EventForm() {
           </View>
         </Section>
         <Section title="알림">
-          <View style={s.wrap}>{REMINDERS.map(([v, l]) => <Pill key={l} text={l} on={ev.reminderMinutes === v} onPress={() => set({ reminderMinutes: v })} />)}</View>
+          <View style={s.wrap}>{REMINDERS.map(([v, l]) => <Pill key={l} text={l} on={ev.reminderMinutes === v} onPress={() => set({ reminderMinutes: v, remindersDefault: false })} />)}</View>
         </Section>
 
         <Section title="공유">

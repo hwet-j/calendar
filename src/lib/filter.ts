@@ -9,3 +9,6 @@ export function visibleEvents(s: Pick<AppState, 'events' | 'profiles' | 'activeP
 
 export const profileOf = (profiles: Profile[], id: string) =>
   profiles.find((p) => p.id === id) ?? profiles[0];
+
+/** 일정 표시 색: 일정에 직접 지정한 색 > 프로필 색 */
+export const eventColor = (e: CalEvent, profiles: Profile[]) => e.color ?? profileOf(profiles, e.profileId)?.color ?? '#4F6BFF';

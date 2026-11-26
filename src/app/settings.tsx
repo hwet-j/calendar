@@ -68,8 +68,9 @@ export default function Settings() {
         } catch { failed++; local[i] = { ...local[i], pendingSync: true }; }
       }
       const profileId = state.activeProfileId ?? state.profiles[0].id;
-      const pulled = await G.pullEvents(token, profileId, uid, local);
-      replaceEvents(G.mergePulled(local, pulled));
+      const range = G.pullRange();
+      const pulled = await G.pullEvents(token, profileId, uid, local, range);
+      replaceEvents(G.mergePulled(local, pulled, range));
       setGoogle({ ...state.google, connected: true, lastSync: new Date().toISOString() });
       Alert.alert(failed ? '일부만 동기화됐어요' : '동기화 완료', failed ? `구글에 완전히 반영하지 못한 일정이 ${failed}개 있어요. 기기에는 그대로 남아 있고 다음 동기화 때 다시 시도해요.${problems.length ? '\n\n' + problems.slice(0, 3).join('\n') : ''}` : `구글 일정 ${pulled.length}개를 반영했어요.`);
     } catch (e) { Alert.alert('동기화 실패', String(e)); } finally { setBusy(false); }

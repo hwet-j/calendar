@@ -147,7 +147,7 @@ test('OAuth 리디렉션 주소만 라우터에서 제외, 일반 딥링크는 �
     expect(isOAuthRedirect(u)).toBe(false);
 });
 
-import { mergePulled } from '../src/lib/google';
+import { mergePulled, pullRange } from '../src/lib/google';
 
 import { buildUpdateBody, checkPushed } from '../src/lib/google';
 
@@ -319,4 +319,51 @@ test('일정 검색: 제목/장소/메모, 대소문자 무시, 가까운 날짜
   expect(searchEvents(events, 'dental', today).map((h) => h.event.id)).toEqual(['3']);
   expect(searchEvents(events, '  ', today)).toEqual([]);
   expect(searchEvents(events, '없는검색어', today)).toEqual([]);
+});
+
+describe('동기화 병합: 구글에서 삭제된 일정 반영', () => {
+  const NOW = new Date(2026, 10, 26, 12).getTime();
+  const range = pullRange(NOW);
+  const inWin = (o: Partial<CalEvent> = {}) => ev({ start: D(12, 3, 9), end: D(12, 3, 10), ...o });
+  const stay = ev({ id: 'S', googleId: 'gS', title: '남아 있는 일정', start: D(12, 5, 9), end: D(12, 5, 10) });
+  const pulledStay = [ev({ id: 'S', googleId: 'gS', title: '남아 있는 일정', start: D(12, 5, 9), end: D(12, 5, 10) })];
+
+  test('기간 안에서 구글에 없어진 일정은 지운다', () => {
+    const gone = inWin({ id: 'G', googleId: 'gG', title: '구글에서 지운 일정' });
+    const out = mergePulled([gone, stay], pulledStay, range);
+    expect(out.map((e) => e.title)).toEqual(['남아 있는 일정']);
+  });
+
+  test('range 를 안 주면 예전처럼 지우지 않는다', () => {
+    const gone = inWin({ id: 'G', googleId: 'gG' });
+    expect(mergePulled([gone, stay], pulledStay)).toHaveLength(2);
+  });
+
+  test('로컬 수정 대기(pendingSync)·구글 미연결 일정은 지우지 않는다', () => {
+    const pending = inWin({ id: 'P', googleId: 'gP', pendingSync: true });
+    const localOnly = inWin({ id: 'L' });
+    const out = mergePulled([pending, localOnly, stay], pulledStay, range);
+    expect(out.map((e) => e.id).sort()).toEqual(['L', 'P', 'S'].sort());
+  });
+
+  test('기간 밖(과거·먼 미래)·기간에 걸친 일정은 지우지 않는다', () => {
+    const old = ev({ id: 'O', googleId: 'gO', start: D(1, 5, 9), end: D(1, 5, 10) });
+    const far = ev({ id: 'F', googleId: 'gF', start: new Date(2028, 0, 5, 9).toISOString(), end: new Date(2028, 0, 5, 10).toISOString() });
+    const straddle = ev({ id: 'T', googleId: 'gT', start: new Date(2027, 11, 1).toISOString(), end: new Date(2027, 11, 20).toISOString() });
+    const out = mergePulled([old, far, straddle, stay], pulledStay, range);
+    expect(out.map((e) => e.id).sort()).toEqual(['F', 'O', 'S', 'T'].sort());
+  });
+
+  test('반복·음력 일정은 지우지 않는다', () => {
+    const weekly = inWin({ id: 'W', googleId: 'gW', repeat: 'weekly' });
+    const lunar = inWin({ id: 'U', googleId: 'gU', repeat: 'yearly', lunar: { month: 10, day: 20, leap: false } });
+    const out = mergePulled([weekly, lunar, stay], pulledStay, range);
+    expect(out.map((e) => e.id).sort()).toEqual(['S', 'U', 'W'].sort());
+  });
+
+  test('가져온 목록이 비어 있으면(계정 전환·오류 가능성) 아무것도 지우지 않는다', () => {
+    const a = inWin({ id: 'A', googleId: 'gA' });
+    const b = inWin({ id: 'B', googleId: 'gB' });
+    expect(mergePulled([a, b], [], range)).toHaveLength(2);
+  });
 });

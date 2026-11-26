@@ -75,6 +75,18 @@ npx expo prebuild
 npx expo run:android   # 또는 run:ios
 ```
 
+## 딥링크로 새 일정 열기 (다른 앱·AI 비서 연동)
+`calendarapp://event/new` 에 쿼리를 붙이면 값이 채워진 새 일정 화면이 열려요. **자동 저장은 하지 않고**, 사용자가 저장을 눌러야 등록돼요.
+
+| 파라미터 | 설명 |
+|---|---|
+| `title` | 제목 (최대 200자) |
+| `start`, `end` | `2026-11-27T15:00` 처럼 시간대가 없으면 기기 현지 시각, `2026-12-01` 처럼 날짜만 써도 돼요. `end`가 없거나 `start`보다 앞서면 1시간 뒤. 2000~2100년만 허용 |
+| `allDay` | `1` 또는 `true` 면 종일 일정 |
+| `location`, `notes` | 장소(200자), 메모(2000자) |
+
+예: `calendarapp://event/new?title=치과&start=2026-11-27T15:00&location=강남`
+
 ## 구글 연동 설정
 1. [Google Cloud Console](https://console.cloud.google.com)에서 프로젝트 생성 → **Google Calendar API** 사용 설정
 2. OAuth 동의 화면(Google Auth Platform) 구성: 대상 *외부*, **테스트 사용자에 본인 구글 계정 추가**, 범위 `https://www.googleapis.com/auth/calendar.events` 추가

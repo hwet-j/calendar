@@ -15,7 +15,7 @@
     "android": {
       "package": "com.hwetj.calendar",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#4F7CFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -28,7 +28,8 @@
       [
         "expo-notifications",
         {
-          "color": "#4F7CFF"
+          "color": "#4F7CFF",
+          "icon": "./assets/notification-icon.png"
         }
       ],
       [

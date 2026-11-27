@@ -1,4 +1,4 @@
-import { eventsResult, parseCmd, replyUrl } from '../src/lib/assistantQuery';
+import { buildSnapshot, eventsResult, parseCmd, replyUrl } from '../src/lib/assistantQuery';
 import type { AppState, CalEvent } from '../src/lib/types';
 
 const NOW = new Date(2026, 10, 27, 12).getTime();
@@ -74,4 +74,61 @@ test('replyUrl: 비서 스킴, id 와 JSON 이 인코딩돼 들어감', () => {
   expect(u.startsWith('hwetassistant://result?id=a-1&app=calendar&data=')).toBe(true);
   const q = new URL(u).searchParams.get('data')!;
   expect(JSON.parse(q).data.title).toBe('가&나=다');
+});
+
+describe('buildSnapshot', () => {
+  const NOWD = new Date(2026, 10, 27, 12);
+  const st = (events: CalEvent[]) => state(events);
+  const iso = (y: number, m: number, d: number, h = 10) => new Date(y, m, d, h).toISOString();
+
+  test('창: 오늘 31일 전 ~ 400일 후, 형식은 eventsResult 의 일정과 같다', () => {
+    const e = ev({ id: 'a', title: '병원', location: '강남' });
+    const snap = buildSnapshot(st([e]), NOWD);
+    expect(snap).toMatchObject({ v: 1, app: 'calendar', ts: NOWD.getTime(), from: '2026-10-27', to: '2028-01-01', truncated: false });
+    expect(snap.events).toEqual(eventsResult(st([e]), new Date(2026, 10, 27), new Date(2026, 10, 27)).events);
+  });
+
+  test('창 경계: 31일 전은 포함, 32일 전·401일 후는 제외', () => {
+    const inP = ev({ id: 'p1', start: iso(2026, 9, 27), end: iso(2026, 9, 27, 11) });
+    const outP = ev({ id: 'p2', start: iso(2026, 9, 26), end: iso(2026, 9, 26, 11) });
+    const inF = ev({ id: 'f1', start: iso(2028, 0, 1), end: iso(2028, 0, 1, 11) });
+    const outF = ev({ id: 'f2', start: iso(2028, 0, 2), end: iso(2028, 0, 2, 11) });
+    expect(buildSnapshot(st([inP, outP, inF, outF]), NOWD).events.map((e) => e.id).sort()).toEqual(['f1', 'p1']);
+  });
+
+  test('반복 일정은 회차로 펼쳐 담고, 숨긴 프로필·메모·참석자는 빠진다', () => {
+    const rep = ev({ id: 'w', repeat: 'weekly', start: iso(2026, 10, 2), end: iso(2026, 10, 2, 11) });
+    const hid = ev({ id: 'h', profileId: 'h' });
+    const snap = buildSnapshot(st([rep, hid]), NOWD);
+    expect(snap.events.every((e) => e.id === 'w')).toBe(true);
+    expect(snap.events.length).toBeGreaterThan(50);
+    expect(snap.events[0]).toMatchObject({ start: '2026-11-02T10:00', repeat: 'weekly' });
+    const s = JSON.stringify(snap);
+    expect(s).not.toContain('secret@x.com');
+    expect(s).not.toContain('민감한 메모');
+  });
+
+  test('서머타임 전환 주에도 벽시계 시각이 유지된다', () => {
+    const rep = ev({ id: 'd', repeat: 'daily', start: iso(2026, 2, 1, 9), end: iso(2026, 2, 1, 10) });
+    const snap = buildSnapshot(st([rep]), new Date(2026, 2, 15, 12));
+    const hits = snap.events.filter((e) => e.start >= '2026-03-06T00:00' && e.start <= '2026-03-10T23:59');
+    expect(hits.map((e) => e.start.slice(11))).toEqual(['09:00', '09:00', '09:00', '09:00', '09:00']);
+  });
+
+  test('1500건을 넘으면 자르고 truncated', () => {
+    const many = Array.from({ length: 1600 }, (_, i) => ev({ id: `m${i}`, start: iso(2026, 11, 1, 10), end: iso(2026, 11, 1, 11) }));
+    const snap = buildSnapshot(st(many), NOWD);
+    expect(snap.events).toHaveLength(1500);
+    expect(snap.truncated).toBe(true);
+  });
+
+  test('일정이 없으면 빈 목록', () => {
+    expect(buildSnapshot(st([]), NOWD).events).toEqual([]);
+  });
+});
+
+test('네이티브 모듈이 없어도 wrapper 는 조용히 false', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { writeAssistantSnapshot } = require('../src/lib/assistantShare');
+  expect(writeAssistantSnapshot('{}')).toBe(false);
 });

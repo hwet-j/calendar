@@ -56,14 +56,14 @@ export function parseCmd(raw: unknown, now: number = Date.now()): AssistantCmd |
   return '지원하지 않는 요청이에요';
 }
 
-/** [from, to] (양 끝 날짜 포함) 에 걸치는 일정. 보이는 프로필만, 반복은 회차로 펼침 */
-export function eventsResult(state: AppState, from: Date, to: Date) {
+/** [from, to] (양 끝 날짜 포함) 에 걸치는 일정을 비서에게 줄 모양으로. 보이는 프로필만, 반복은 회차로 펼침 */
+function collect(state: AppState, from: Date, to: Date, cap: number) {
   const hidden = new Set(state.profiles.filter((p) => !p.visible).map((p) => p.id));
   const names = new Map(state.profiles.map((p) => [p.id, p.name]));
   const end = new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1);
   const occ = expand(state.events.filter((e) => !hidden.has(e.profileId)), from, end)
     .filter((o) => o.start < end && (o.end > from || o.start >= from));
-  const list = occ.slice(0, MAX_ITEMS).map((o) => {
+  const events = occ.slice(0, cap).map((o) => {
     const e = o.event;
     // 종일 일정의 종료는 (구글 방식) 다음 날 00:00 이라 마지막 날로 돌려줌
     const last = e.allDay && o.end > o.start ? new Date(o.end.getFullYear(), o.end.getMonth(), o.end.getDate() - 1) : o.end;
@@ -76,7 +76,28 @@ export function eventsResult(state: AppState, from: Date, to: Date) {
       ...(e.repeat !== 'none' ? { repeat: e.repeat } : {}),
     };
   });
-  return { from: ymd(from), to: ymd(to), count: occ.length, truncated: occ.length > MAX_ITEMS, events: list };
+  return { count: occ.length, truncated: occ.length > cap, events };
+}
+
+export function eventsResult(state: AppState, from: Date, to: Date) {
+  const r = collect(state, from, to, MAX_ITEMS);
+  return { from: ymd(from), to: ymd(to), ...r };
+}
+
+/**
+ * 백그라운드 읽기용 스냅샷 (ContentProvider 가 파일로 제공). 앱이 닫혀 있어도 비서가 읽을 수 있다.
+ * 창: 오늘 31일 전 ~ 400일 후. 메모·참석자는 담지 않는다. 일정이 바뀔 때·앱이 앞으로 올 때마다 다시 쓴다.
+ */
+export const SNAPSHOT_PAST_DAYS = 31;
+export const SNAPSHOT_FUTURE_DAYS = 400;
+export const SNAPSHOT_CAP = 1500;
+
+export function buildSnapshot(state: AppState, now: Date = new Date()) {
+  const today = startOfDay(now);
+  const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - SNAPSHOT_PAST_DAYS);
+  const to = new Date(today.getFullYear(), today.getMonth(), today.getDate() + SNAPSHOT_FUTURE_DAYS);
+  const r = collect(state, from, to, SNAPSHOT_CAP);
+  return { v: 1 as const, app: 'calendar' as const, ts: now.getTime(), from: ymd(from), to: ymd(to), truncated: r.truncated, events: r.events };
 }
 
 /** 비서에게 돌려줄 주소. data 는 JSON 문자열 */

@@ -103,6 +103,14 @@ npx expo run:android   # 또는 run:ios
 
 응답은 명시적 인텐트(`hwetassistant://result?...`)로 비서 패키지에만 가요. 요청이 응답 대상을 바꿀 수 없어요.
 
+### 앱을 열지 않고 읽기 (백그라운드 스냅샷)
+앱은 일정이 바뀔 때(1초 모아서)와 앞으로 올 때마다 **읽기 전용 스냅샷** 파일(`assistant_snapshot.json`, 앱 내부 저장소)을 다시 써요. 비서 앱은 앱을 열지 않고 아래 제공자로 이 스냅샷을 읽어요 (`modules/assistant-share`, 로컬 Expo 모듈).
+
+- 제공자 authority: `com.hwetj.calendar.assistant`, 호출: `ContentResolver.call(Uri.parse("content://com.hwetj.calendar.assistant"), "snapshot", null, null)` → `Bundle{json, ts}`
+- **호출자 패키지가 `com.hwetj.assistant` 일 때만** 응답해요(`getCallingPackage` + uid 로 확인). 아니면 `error: "forbidden"`. 스냅샷이 없으면 `no_snapshot`. query/insert/update/delete 는 전부 막혀 있어요.
+- 스냅샷: `{v:1, app:'calendar', ts, from, to, truncated, events:[{id,title,allDay,start,end,location?,profile,repeat?}]}` — 창은 오늘 31일 전 ~ 400일 후, 반복은 회차로 펼침, 보이는 프로필만, **메모·참석자 없음**, 최대 1500건(넘으면 `truncated`)
+- 앱이 한 번도 실행된 적 없거나 구버전이면 제공자가 없어서, 비서는 위 딥링크(`calendarapp://assistant`) 방식으로 대신해요.
+
 ## 구글 연동 설정
 1. [Google Cloud Console](https://console.cloud.google.com)에서 프로젝트 생성 → **Google Calendar API** 사용 설정
 2. OAuth 동의 화면(Google Auth Platform) 구성: 대상 *외부*, **테스트 사용자에 본인 구글 계정 추가**, 범위 `https://www.googleapis.com/auth/calendar.events` 추가

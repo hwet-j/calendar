@@ -93,6 +93,16 @@ npx expo run:android   # 또는 run:ios
 
 예: `calendarapp://event/new?title=치과&start=2026-11-27T15:00&location=강남`
 
+## AI 비서 연동: 일정 읽기 · 날짜 화면 열기
+`calendarapp://assistant?cmd=<URL인코딩 JSON>` (`{v:1, id, ts(ms), op, ...}`, id 중복·10분 지난 요청은 무시)
+
+| op | 동작 |
+|---|---|
+| `query` + `what:'events'` (`from`, `to` = YYYY-MM-DD, 기본 오늘~14일, 최대 92일) | 그 기간의 일정(반복은 회차로 펼침)을 **비서 앱(`com.hwetj.assistant`)에게만** 돌려줘요. 제목·시간·장소·프로필만 보내고 메모·참석자 이메일은 보내지 않아요. 최대 150건. 데이터는 바꾸지 않아요 |
+| `show` + `date` | 그 날짜를 달력에서 열어요 |
+
+응답은 명시적 인텐트(`hwetassistant://result?...`)로 비서 패키지에만 가요. 요청이 응답 대상을 바꿀 수 없어요.
+
 ## 구글 연동 설정
 1. [Google Cloud Console](https://console.cloud.google.com)에서 프로젝트 생성 → **Google Calendar API** 사용 설정
 2. OAuth 동의 화면(Google Auth Platform) 구성: 대상 *외부*, **테스트 사용자에 본인 구글 계정 추가**, 범위 `https://www.googleapis.com/auth/calendar.events` 추가

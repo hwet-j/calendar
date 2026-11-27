@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
-import React, { useMemo, useRef, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { R, Theme, useTheme } from '../components/theme';
@@ -28,6 +28,14 @@ export default function Home() {
   const [cursor, setCursor] = useState(() => new Date(now.getFullYear(), now.getMonth(), 1));
   const [sel, setSel] = useState(now);
   const [jumpOpen, setJumpOpen] = useState(false);
+  // calendarapp://assistant 의 show 요청: /?date=YYYY-MM-DD 로 그 날짜를 연다
+  const { date: dateParam } = useLocalSearchParams<{ date?: string }>();
+  useEffect(() => {
+    const m = typeof dateParam === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateParam) : null;
+    if (!m) return;
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    setCursor(new Date(d.getFullYear(), d.getMonth(), 1)); setSel(d);
+  }, [dateParam]);
   const { copyOn, move: moveEvt } = useEventActions();
   // ---- 일정 카드를 길게 눌러 끌어서 다른 날짜 칸에 놓기 (복사/이동 확인)
   const [drag, setDrag] = useState<Occurrence | null>(null);

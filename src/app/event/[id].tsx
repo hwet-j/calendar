@@ -223,6 +223,7 @@ function EventForm() {
 
         <View style={{ gap: 8 }}>
           <Button text={saving ? '저장 중…' : '저장'} onPress={save} disabled={saving} />
+          {existing && <Button text="다른 날짜에 복사" icon="copy-outline" kind="soft" onPress={() => router.push(`/copy/${existing.id}`)} />}
           {existing && <Button text=".ics 파일로 공유" icon="share-outline" kind="soft" onPress={() => shareEvents([existing], 'event.ics')} />}
           {existing && <Button text="삭제" kind="danger" onPress={remove} />}
         </View>

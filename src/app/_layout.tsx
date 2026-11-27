@@ -70,6 +70,7 @@ function Shell() {
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="event/[id]" options={{ title: '일정', presentation: 'modal' }} />
+        <Stack.Screen name="copy/[id]" options={{ title: '일정 복사' }} />
         <Stack.Screen name="profiles" options={{ title: '프로필' }} />
         <Stack.Screen name="settings" options={{ title: '설정' }} />
       </Stack>

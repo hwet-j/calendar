@@ -23,13 +23,15 @@ interface Props {
   lunarOf: Map<string, LunarFull | null>;
   profiles: Profile[];
   onSelect: (d: Date) => void;
+  /** 끌어 놓기 중 손가락이 올라가 있는 날짜 (강조) */
+  hover?: Date | null;
 }
 
 /**
  * 한 주(7칸)를 그린다. 날짜 칸 위에 일정 막대를 겹쳐 놓는 구글 캘린더 월간 보기 방식.
  * 막대는 flex 비율로 폭을 나눠 (퍼센트 폭 대신) 안드로이드에서도 7칸이 정확히 맞는다.
  */
-export function WeekRow({ week, segs, maxLanes, height, month, sel, now, showLunar, lunarOf, profiles, onSelect }: Props) {
+export function WeekRow({ week, segs, maxLanes, height, month, sel, now, showLunar, lunarOf, profiles, onSelect, hover }: Props) {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
   const hidden = useMemo(() => hiddenPerDay(segs, maxLanes), [segs, maxLanes]);
@@ -51,7 +53,7 @@ export function WeekRow({ week, segs, maxLanes, height, month, sel, now, showLun
           const l = lunarOf.get(dayKey(d));
           const count = segs.filter((x) => x.startCol <= i && x.endCol >= i).length;
           return (
-            <Pressable key={i} style={[s.cell, isSel && s.cellSel]} onPress={() => onSelect(d)}
+            <Pressable key={i} style={[s.cell, isSel && s.cellSel, hover && sameDay(d, hover) && s.cellHover]} onPress={() => onSelect(d)}
               accessibilityLabel={`${d.getMonth() + 1}월 ${d.getDate()}일, 일정 ${count}개`}>
               <View style={s.numRow}>
                 <View style={[s.num, isToday && { backgroundColor: t.primary }]}>
@@ -107,6 +109,7 @@ const styles = (t: Theme) => StyleSheet.create({
   row: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', borderRadius: 8 },
   cellSel: { backgroundColor: t.primarySoft },
+  cellHover: { backgroundColor: t.primarySoft, borderWidth: 2, borderColor: t.primary },
   numRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, height: NUM_H, paddingTop: 2 },
   num: { minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   numT: { fontSize: 13, color: t.text, fontWeight: '500' },

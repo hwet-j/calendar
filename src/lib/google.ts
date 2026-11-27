@@ -135,11 +135,18 @@ async function call(token: string, url: string, init?: RequestInit) {
 }
 
 /** 구글 → 앱: 이전 30일 ~ 이후 365일 (반복 일정은 마스터 1건으로 가져옴) */
-export async function pullEvents(token: string, profileId: string, newId: () => string, existing: CalEvent[]) {
+/** 동기화로 가져오는 기간. 병합할 때 "이 기간 안인데 구글에 없다 = 구글에서 삭제됨" 판단에도 같은 값을 쓴다. */
+export interface PullRange { timeMin: Date; timeMax: Date }
+export const pullRange = (now: number = Date.now()): PullRange => ({
+  timeMin: new Date(now - 30 * 86400000),
+  timeMax: new Date(now + 365 * 86400000),
+});
+
+export async function pullEvents(token: string, profileId: string, newId: () => string, existing: CalEvent[], range: PullRange = pullRange()) {
   const params = new URLSearchParams({
     singleEvents: 'false', maxResults: '250',
-    timeMin: new Date(Date.now() - 30 * 86400000).toISOString(),
-    timeMax: new Date(Date.now() + 365 * 86400000).toISOString(),
+    timeMin: range.timeMin.toISOString(),
+    timeMax: range.timeMax.toISOString(),
   });
   const byGid = new Map(existing.filter((e) => e.googleId).map((e) => [e.googleId!, e]));
   const out: CalEvent[] = [];
@@ -214,10 +221,20 @@ export async function freshAccessToken(): Promise<string | null> {
 /**
  * 동기화 병합: 구글에서 받아온 일정으로 로컬을 갱신하되,
  * 아직 구글에 반영되지 못한(pendingSync) 로컬 변경은 구글의 옛 버전으로 덮어쓰지 않는다.
+ *
+ * range 를 주면 "구글에서 삭제된 일정"도 반영한다 (다른 기기·AI 비서가 구글에서 지운 경우).
+ * 안전을 위해 아래를 모두 만족하는 로컬 일정만 지운다:
+ *  - 구글과 연결(googleId)됐고 로컬 수정 대기(pendingSync)가 아님
+ *  - 이번에 가져온 목록에 없음 (가져온 목록이 비어 있으면 계정 전환·오류일 수 있어 아무것도 지우지 않음)
+ *  - 반복·음력 일정이 아니고, 시작~종료가 가져온 기간 안에 완전히 들어옴 (기간 밖 일정은 목록에 없는 게 정상이라 판단 불가)
  */
-export function mergePulled(local: CalEvent[], pulled: CalEvent[]): CalEvent[] {
+export function mergePulled(local: CalEvent[], pulled: CalEvent[], range?: PullRange): CalEvent[] {
   const pendingByG = new Map(local.filter((e) => e.pendingSync && e.googleId).map((e) => [e.googleId!, e]));
   const pulledG = new Set(pulled.map((e) => e.googleId));
   const merged = pulled.map((p) => pendingByG.get(p.googleId!) ?? p);
-  return [...local.filter((e) => !e.googleId || !pulledG.has(e.googleId)), ...merged];
+  const deletedOnGoogle = (e: CalEvent) =>
+    !!range && pulled.length > 0 && !!e.googleId && !e.pendingSync && !pulledG.has(e.googleId) &&
+    e.repeat === 'none' && !e.lunar &&
+    new Date(e.start) >= range.timeMin && new Date(e.end) <= range.timeMax;
+  return [...local.filter((e) => (!e.googleId || !pulledG.has(e.googleId)) && !deletedOnGoogle(e)), ...merged];
 }

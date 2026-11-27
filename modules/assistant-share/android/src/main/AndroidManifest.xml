@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- AI 비서 앱(com.hwetj.assistant)만 읽을 수 있는 읽기 전용 스냅샷 제공자. 접근 제한은 Provider 코드에서 호출자 패키지로 검사한다. -->
+    <provider
+      android:name=".AssistantShareProvider"
+      android:authorities="${applicationId}.assistant"
+      android:exported="true"
+      android:grantUriPermissions="false" />
+  </application>
+</manifest>

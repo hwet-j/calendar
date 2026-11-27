@@ -9,6 +9,7 @@ import { Theme, useTheme } from '../../components/theme';
 import * as G from '../../lib/google';
 import { shareEvents } from '../../lib/share';
 import { startOfDay } from '../../lib/dates';
+import { applyPrefill, type PrefillParams } from '../../lib/prefill';
 import { fmtLunar, lunarToSolar, solarToLunar } from '../../lib/lunar';
 import { uid, useStore } from '../../lib/store';
 import type { CalEvent, LunarDate, Repeat } from '../../lib/types';
@@ -28,7 +29,7 @@ function EventForm() {
   const t = useTheme();
   const s = useMemo(() => styles(t), [t]);
   const insets = useSafeAreaInsets();
-  const { id, date } = useLocalSearchParams<{ id: string; date?: string }>();
+  const { id, date, ...prefill } = useLocalSearchParams<{ id: string; date?: string } & PrefillParams>();
   const { state, saveEvent, deleteEvent } = useStore();
   const existing = state.events.find((e) => e.id === id);
 
@@ -36,13 +37,15 @@ function EventForm() {
     if (existing) return existing;
     const b = date ? new Date(date) : new Date();
     const h = Math.min(new Date().getHours() + 1, 22);
-    return {
+    const fresh: CalEvent = {
       id: uid(), profileId: state.activeProfileId ?? state.profiles[0].id,
       title: '', allDay: false, repeat: 'none', reminderMinutes: 10, attendees: [],
       start: new Date(b.getFullYear(), b.getMonth(), b.getDate(), h).toISOString(),
       end: new Date(b.getFullYear(), b.getMonth(), b.getDate(), h + 1).toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    // 딥링크(예: AI 비서)가 넘긴 값으로 미리 채운다. 저장은 사용자가 직접 눌러야 한다.
+    return applyPrefill(fresh, prefill);
   });
   const [mails, setMails] = useState(ev.attendees.join(', '));
   const [picker, setPicker] = useState<PickerState>(null);
@@ -220,6 +223,7 @@ function EventForm() {
 
         <View style={{ gap: 8 }}>
           <Button text={saving ? '저장 중…' : '저장'} onPress={save} disabled={saving} />
+          {existing && <Button text="다른 날짜에 복사" icon="copy-outline" kind="soft" onPress={() => router.push(`/copy/${existing.id}`)} />}
           {existing && <Button text=".ics 파일로 공유" icon="share-outline" kind="soft" onPress={() => shareEvents([existing], 'event.ics')} />}
           {existing && <Button text="삭제" kind="danger" onPress={remove} />}
         </View>

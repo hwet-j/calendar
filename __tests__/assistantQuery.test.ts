@@ -132,3 +132,26 @@ test('네이티브 모듈이 없어도 wrapper 는 조용히 false', () => {
   const { writeAssistantSnapshot } = require('../src/lib/assistantShare');
   expect(writeAssistantSnapshot('{}')).toBe(false);
 });
+
+describe('parseCmd add (비서가 일정을 바로 등록)', () => {
+  const NOW2 = Date.UTC(2026, 10, 28, 3, 0, 0);
+  const c2 = (o: object) => JSON.stringify({ v: 1, id: 'abc-1', ts: NOW2, ...o });
+  test('시간 일정: 끝이 없으면 1시간', () => {
+    const r = parseCmd(c2({ op: 'add', title: ' 치과 ', start: '2026-12-01T15:00' }), NOW2) as any;
+    expect(r).toMatchObject({ op: 'add', title: '치과', allDay: false });
+    expect(r.end.getTime() - r.start.getTime()).toBe(3_600_000);
+    expect(r.start.getHours()).toBe(15);
+  });
+  test('종일 일정: 날짜만 주면 종일', () => {
+    const r = parseCmd(c2({ op: 'add', title: '제사', start: '2026-12-01' }), NOW2) as any;
+    expect(r.allDay).toBe(true);
+    expect(r.start.getHours()).toBe(0);
+  });
+  test('잘못된 입력은 사람이 읽을 오류 문자열', () => {
+    expect(parseCmd(c2({ op: 'add', start: '2026-12-01T15:00' }), NOW2)).toMatch(/title/);
+    expect(parseCmd(c2({ op: 'add', title: 'x', start: '내일 3시' }), NOW2)).toMatch(/start/);
+    expect(parseCmd(c2({ op: 'add', title: 'x', start: '2026-12-01T15:00', end: '2026-12-01T14:00' }), NOW2)).toMatch(/end/);
+    expect(parseCmd(c2({ op: 'add', title: 'x', start: '2026-13-01' }), NOW2)).toMatch(/start/);
+    expect(parseCmd(JSON.stringify({ v: 1, id: 'abc-1', ts: NOW2 - 3_600_000, op: 'add', title: 'x', start: '2026-12-01' }), NOW2)).toMatch(/오래된/);
+  });
+});

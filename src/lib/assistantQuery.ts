@@ -15,7 +15,8 @@ const MAX_SPAN_DAYS = 92;
 
 export type AssistantCmd =
   | { op: 'query'; id: string; what: 'events'; from: Date; to: Date }
-  | { op: 'show'; id: string; date: Date };
+  | { op: 'show'; id: string; date: Date }
+  | { op: 'add'; id: string; title: string; start: Date; end: Date; allDay: boolean; location?: string; notes?: string };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -30,6 +31,20 @@ function parseYmd(v: unknown): Date | null {
   const dt = new Date(y, mo - 1, d);
   return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? dt : null;
 }
+
+/** 'YYYY-MM-DD' 또는 'YYYY-MM-DDTHH:mm(:ss)' (현지 시각). 그 밖의 형식은 null */
+function parseWhen(v: unknown): { d: Date; dateOnly: boolean } | null {
+  if (typeof v !== 'string') return null;
+  const day = parseYmd(v);
+  if (day) return { d: day, dateOnly: true };
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/.exec(v);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  const ok = +m[1] >= 2000 && +m[1] <= 2100 && +m[4] < 24 && +m[5] < 60 && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3];
+  return ok ? { d, dateOnly: false } : null;
+}
+
+const clip = (v: unknown, max: number): string | undefined => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
 
 /** 바깥에서 온 JSON 문자열을 검증. 문제가 있으면 사람이 읽을 오류 문자열 */
 export function parseCmd(raw: unknown, now: number = Date.now()): AssistantCmd | string {
@@ -52,6 +67,19 @@ export function parseCmd(raw: unknown, now: number = Date.now()): AssistantCmd |
     const span = Math.round((to.getTime() - from.getTime()) / 86400000);
     if (span > MAX_SPAN_DAYS) return `한 번에 ${MAX_SPAN_DAYS}일까지만 조회할 수 있어요`;
     return { op: 'query', id: j.id, what: 'events', from, to };
+  }
+  if (j.op === 'add') {
+    const title = clip(j.title, 200);
+    if (!title) return 'title 이 필요해요';
+    const st = parseWhen(j.start);
+    if (!st) return 'start 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요';
+    const allDay = j.allDay === true || (j.allDay == null && st.dateOnly);
+    const en = j.end == null ? null : parseWhen(j.end);
+    if (j.end != null && !en) return 'end 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요';
+    const start = allDay ? startOfDay(st.d) : st.d;
+    const end = allDay ? startOfDay(en?.d ?? st.d) : (en?.d ?? new Date(st.d.getTime() + 3_600_000));
+    if (end < start) return 'end 가 start 보다 앞서요';
+    return { op: 'add', id: j.id, title, start, end, allDay, location: clip(j.location, 200), notes: clip(j.notes, 2000) };
   }
   return '지원하지 않는 요청이에요';
 }

@@ -106,6 +106,9 @@ function EventForm() {
   const lunarFallback = ev.lunar && solarToLunar(new Date(ev.start)) &&
     (solarToLunar(new Date(ev.start))!.leap !== ev.lunar.leap);
 
+  // 딥링크(비서 등)로 처음 열린 화면은 뒤로 갈 기록이 없어 router.back() 이 아무 일도 안 한다 → 홈으로 보낸다
+  const leave = () => (router.canGoBack() ? router.back() : router.replace('/'));
+
   const save = async () => {
     if (!ev.title.trim()) return Alert.alert('제목을 입력해 주세요');
     setSaving(true);
@@ -128,7 +131,7 @@ function EventForm() {
       }
     }
     saveEvent(out);
-    router.back();
+    leave();
   };
 
   const remove = () => Alert.alert('일정 삭제', '이 일정을 삭제할까요?', [
@@ -136,7 +139,7 @@ function EventForm() {
     { text: '삭제', style: 'destructive', onPress: async () => {
       const token = existing?.googleId && state.google.connected ? await G.freshAccessToken() : null;
       if (token && existing?.googleId) await G.removeEvent(token, existing.googleId).catch(() => {});
-      deleteEvent(ev.id); router.back();
+      deleteEvent(ev.id); leave();
     } },
   ]);
 

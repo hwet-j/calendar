@@ -36,6 +36,11 @@ export function useEventActions() {
   };
 
   return {
+    /** 일정 한 건을 저장한다(알림창 없음). 구글 연결 시 구글에도 올리고, 못 올리면 pendingSync 로 남긴다. 구글에 반영됐는지 돌려준다 */
+    add: async (e: CalEvent): Promise<{ googleSynced: boolean | null }> => {
+      const failed = await persist([e]);
+      return { googleSynced: state.google.connected ? failed === 0 : null };
+    },
     /** base 를 days[] 각각만큼 옮긴 사본을 만든다. 만든 개수를 돌려준다 */
     copyOn: async (base: CalEvent, days: number[]): Promise<number> => {
       const now = new Date();

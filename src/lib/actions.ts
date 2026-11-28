@@ -9,7 +9,7 @@ import type { CalEvent } from './types';
  * 구글 반영이 실패해도 기기에는 저장하고 pendingSync 로 표시 → 설정의 "지금 동기화"에서 다시 올림.
  */
 export function useEventActions() {
-  const { state, saveEvent } = useStore();
+  const { state, saveEvent, deleteEvent } = useStore();
 
   const persist = async (list: CalEvent[]): Promise<number> => {
     let failed = 0;
@@ -40,6 +40,21 @@ export function useEventActions() {
     add: async (e: CalEvent): Promise<{ googleSynced: boolean | null }> => {
       const failed = await persist([e]);
       return { googleSynced: state.google.connected ? failed === 0 : null };
+    },
+    /** 일정 한 건을 지운다(알림창 없음). 구글에 올라간 일정이면 구글에서도 지운다. 구글 삭제 실패 시 기기 일정은 그대로 두고 false */
+    remove: async (e: CalEvent): Promise<{ ok: boolean; googleRemoved: boolean | null }> => {
+      let googleRemoved: boolean | null = null;
+      if (e.googleId && state.google.connected) {
+        const token = await G.freshAccessToken();
+        if (!token) return { ok: false, googleRemoved: false };
+        try { await G.removeEvent(token, e.googleId); googleRemoved = true; } catch (err) {
+          // 구글에 이미 없는 일정(404·410)은 지운 것으로 본다
+          if (!/Google API (404|410)/.test(String(err))) return { ok: false, googleRemoved: false };
+          googleRemoved = true;
+        }
+      }
+      deleteEvent(e.id);
+      return { ok: true, googleRemoved };
     },
     /** base 를 days[] 각각만큼 옮긴 사본을 만든다. 만든 개수를 돌려준다 */
     copyOn: async (base: CalEvent, days: number[]): Promise<number> => {

@@ -16,6 +16,8 @@ const MAX_SPAN_DAYS = 92;
 export type AssistantCmd =
   | { op: 'query'; id: string; what: 'events'; from: Date; to: Date }
   | { op: 'show'; id: string; date: Date }
+  | { op: 'update'; id: string; eventId: string; patch: { title?: string; start?: Date; end?: Date; allDay?: boolean; location?: string; notes?: string; clearLocation?: boolean; clearNotes?: boolean } }
+  | { op: 'delete'; id: string; eventId: string }
   | { op: 'add'; id: string; title: string; start: Date; end: Date; allDay: boolean; location?: string; notes?: string };
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -80,6 +82,20 @@ export function parseCmd(raw: unknown, now: number = Date.now()): AssistantCmd |
     const end = allDay ? startOfDay(en?.d ?? st.d) : (en?.d ?? new Date(st.d.getTime() + 3_600_000));
     if (end < start) return 'end 가 start 보다 앞서요';
     return { op: 'add', id: j.id, title, start, end, allDay, location: clip(j.location, 200), notes: clip(j.notes, 2000) };
+  }
+  if (j.op === 'delete' || j.op === 'update') {
+    if (typeof j.eventId !== 'string' || !/^[\w-]{1,64}$/.test(j.eventId)) return 'eventId 가 올바르지 않아요 (일정 조회 결과의 id)';
+    if (j.op === 'delete') return { op: 'delete', id: j.id, eventId: j.eventId };
+    const patch: Extract<AssistantCmd, { op: 'update' }>['patch'] = {};
+    if (j.title !== undefined) { const t = clip(j.title, 200); if (!t) return 'title 은 비울 수 없어요'; patch.title = t; }
+    if (j.allDay !== undefined) { if (typeof j.allDay !== 'boolean') return 'allDay 는 true/false'; patch.allDay = j.allDay; }
+    if (j.start !== undefined) { const w = parseWhen(j.start); if (!w) return 'start 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요'; patch.start = w.d; }
+    if (j.end !== undefined) { const w = parseWhen(j.end); if (!w) return 'end 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요'; patch.end = w.d; }
+    if (patch.start && patch.end && patch.end < patch.start) return 'end 가 start 보다 앞서요';
+    if (j.location !== undefined) { if (j.location === '' || j.location === null) patch.clearLocation = true; else { const l = clip(j.location, 200); if (!l) return 'location 형식 오류'; patch.location = l; } }
+    if (j.notes !== undefined) { if (j.notes === '' || j.notes === null) patch.clearNotes = true; else { const n = clip(j.notes, 2000); if (!n) return 'notes 형식 오류'; patch.notes = n; } }
+    if (!Object.keys(patch).length) return '바꿀 항목이 없어요';
+    return { op: 'update', id: j.id, eventId: j.eventId, patch };
   }
   return '지원하지 않는 요청이에요';
 }

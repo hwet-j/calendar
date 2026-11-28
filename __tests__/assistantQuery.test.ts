@@ -155,3 +155,24 @@ describe('parseCmd add (비서가 일정을 바로 등록)', () => {
     expect(parseCmd(JSON.stringify({ v: 1, id: 'abc-1', ts: NOW2 - 3_600_000, op: 'add', title: 'x', start: '2026-12-01' }), NOW2)).toMatch(/오래된/);
   });
 });
+
+describe('parseCmd update/delete', () => {
+  const NOW3 = Date.UTC(2026, 10, 28, 3, 0, 0);
+  const c3 = (o: object) => JSON.stringify({ v: 1, id: 'abc-2', ts: NOW3, ...o });
+  test('삭제: eventId 필요', () => {
+    expect(parseCmd(c3({ op: 'delete', eventId: 'ev_1' }), NOW3)).toMatchObject({ op: 'delete', eventId: 'ev_1' });
+    expect(parseCmd(c3({ op: 'delete' }), NOW3)).toMatch(/eventId/);
+    expect(parseCmd(c3({ op: 'delete', eventId: '../x' }), NOW3)).toMatch(/eventId/);
+  });
+  test('수정: 바뀐 항목만, 비우기, 검증', () => {
+    const r = parseCmd(c3({ op: 'update', eventId: 'ev_1', title: '새 제목', start: '2026-12-02T10:00', location: '' }), NOW3) as any;
+    expect(r.op).toBe('update');
+    expect(r.patch.title).toBe('새 제목');
+    expect(r.patch.start.getHours()).toBe(10);
+    expect(r.patch.clearLocation).toBe(true);
+    expect(parseCmd(c3({ op: 'update', eventId: 'ev_1' }), NOW3)).toMatch(/바꿀 항목/);
+    expect(parseCmd(c3({ op: 'update', eventId: 'ev_1', start: 'x' }), NOW3)).toMatch(/start/);
+    expect(parseCmd(c3({ op: 'update', eventId: 'ev_1', title: '  ' }), NOW3)).toMatch(/title/);
+    expect(parseCmd(c3({ op: 'update', eventId: 'ev_1', start: '2026-12-02T10:00', end: '2026-12-02T09:00' }), NOW3)).toMatch(/end/);
+  });
+});

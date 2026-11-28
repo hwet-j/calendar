@@ -49,6 +49,12 @@
             }
           ]
         }
+      ],
+      [
+        "./plugins/withoutBrowsable",
+        {
+          "scheme": "calendarapp"
+        }
       ]
     ]
   }

@@ -15,7 +15,10 @@ const MAX_SPAN_DAYS = 92;
 
 export type AssistantCmd =
   | { op: 'query'; id: string; what: 'events'; from: Date; to: Date }
-  | { op: 'show'; id: string; date: Date };
+  | { op: 'show'; id: string; date: Date }
+  | { op: 'update'; id: string; eventId: string; patch: { title?: string; start?: Date; end?: Date; allDay?: boolean; location?: string; notes?: string; clearLocation?: boolean; clearNotes?: boolean } }
+  | { op: 'delete'; id: string; eventId: string }
+  | { op: 'add'; id: string; title: string; start: Date; end: Date; allDay: boolean; location?: string; notes?: string };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -30,6 +33,20 @@ function parseYmd(v: unknown): Date | null {
   const dt = new Date(y, mo - 1, d);
   return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d ? dt : null;
 }
+
+/** 'YYYY-MM-DD' 또는 'YYYY-MM-DDTHH:mm(:ss)' (현지 시각). 그 밖의 형식은 null */
+function parseWhen(v: unknown): { d: Date; dateOnly: boolean } | null {
+  if (typeof v !== 'string') return null;
+  const day = parseYmd(v);
+  if (day) return { d: day, dateOnly: true };
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/.exec(v);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  const ok = +m[1] >= 2000 && +m[1] <= 2100 && +m[4] < 24 && +m[5] < 60 && d.getMonth() === +m[2] - 1 && d.getDate() === +m[3];
+  return ok ? { d, dateOnly: false } : null;
+}
+
+const clip = (v: unknown, max: number): string | undefined => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : undefined);
 
 /** 바깥에서 온 JSON 문자열을 검증. 문제가 있으면 사람이 읽을 오류 문자열 */
 export function parseCmd(raw: unknown, now: number = Date.now()): AssistantCmd | string {
@@ -52,6 +69,33 @@ export function parseCmd(raw: unknown, now: number = Date.now()): AssistantCmd |
     const span = Math.round((to.getTime() - from.getTime()) / 86400000);
     if (span > MAX_SPAN_DAYS) return `한 번에 ${MAX_SPAN_DAYS}일까지만 조회할 수 있어요`;
     return { op: 'query', id: j.id, what: 'events', from, to };
+  }
+  if (j.op === 'add') {
+    const title = clip(j.title, 200);
+    if (!title) return 'title 이 필요해요';
+    const st = parseWhen(j.start);
+    if (!st) return 'start 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요';
+    const allDay = j.allDay === true || (j.allDay == null && st.dateOnly);
+    const en = j.end == null ? null : parseWhen(j.end);
+    if (j.end != null && !en) return 'end 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요';
+    const start = allDay ? startOfDay(st.d) : st.d;
+    const end = allDay ? startOfDay(en?.d ?? st.d) : (en?.d ?? new Date(st.d.getTime() + 3_600_000));
+    if (end < start) return 'end 가 start 보다 앞서요';
+    return { op: 'add', id: j.id, title, start, end, allDay, location: clip(j.location, 200), notes: clip(j.notes, 2000) };
+  }
+  if (j.op === 'delete' || j.op === 'update') {
+    if (typeof j.eventId !== 'string' || !/^[\w-]{1,64}$/.test(j.eventId)) return 'eventId 가 올바르지 않아요 (일정 조회 결과의 id)';
+    if (j.op === 'delete') return { op: 'delete', id: j.id, eventId: j.eventId };
+    const patch: Extract<AssistantCmd, { op: 'update' }>['patch'] = {};
+    if (j.title !== undefined) { const t = clip(j.title, 200); if (!t) return 'title 은 비울 수 없어요'; patch.title = t; }
+    if (j.allDay !== undefined) { if (typeof j.allDay !== 'boolean') return 'allDay 는 true/false'; patch.allDay = j.allDay; }
+    if (j.start !== undefined) { const w = parseWhen(j.start); if (!w) return 'start 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요'; patch.start = w.d; }
+    if (j.end !== undefined) { const w = parseWhen(j.end); if (!w) return 'end 는 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm 형식이어야 해요'; patch.end = w.d; }
+    if (patch.start && patch.end && patch.end < patch.start) return 'end 가 start 보다 앞서요';
+    if (j.location !== undefined) { if (j.location === '' || j.location === null) patch.clearLocation = true; else { const l = clip(j.location, 200); if (!l) return 'location 형식 오류'; patch.location = l; } }
+    if (j.notes !== undefined) { if (j.notes === '' || j.notes === null) patch.clearNotes = true; else { const n = clip(j.notes, 2000); if (!n) return 'notes 형식 오류'; patch.notes = n; } }
+    if (!Object.keys(patch).length) return '바꿀 항목이 없어요';
+    return { op: 'update', id: j.id, eventId: j.eventId, patch };
   }
   return '지원하지 않는 요청이에요';
 }
